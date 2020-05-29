@@ -2,13 +2,107 @@
 
 import random
 import math
-import PlayerData
 
 
 def time_format(duration):
     hours = math.floor(duration)
     minutes = math.floor((duration - hours) * 60)
     return "{}h {}m".format(hours, minutes)
+
+
+def voyage_estimator_redux(ps, ss, o1, o2, o3, o4, startAm, *, debug=False, numSims = 5000):
+    """
+    Another attempt at implementing the DataCore algorithm to estimate voyage duration.
+
+    :param ps: primary skill
+    :param ss: secondary skill
+    :param o1: other skill 1
+    :param o2: other skill 2
+    :param o3: other skill 3
+    :param o4: other skill 4
+    :param startAm: amount of starting antimatter
+    :param debug: True to print additional information during execution.
+    :return: list of average, safe, safer estimated voyage durations in hours
+    """
+
+    hazSkillVariance = 0.2
+    psChance = 0.35
+    ssChance = 0.25
+    osChance = 0.1
+    skills = [ps, ss, o1, o2, o3, o4]
+
+    secondsPerTick = 20
+    secondsInMinute = 60
+    minutesInHour = 60
+    hazardTick = 4
+    rewardTick = 7
+    hazardAsRewardTick = 28
+    ticksPerMinute = secondsInMinute / secondsPerTick                       # 3
+    ticksPerHour = ticksPerMinute * minutesInHour                           # 180
+    hoursPerDilemma = 2
+    ticksPerDilemma = hoursPerDilemma * minutesInHour * ticksPerMinute      # 360
+    hazSkillPerHour = 1260
+    hazSkillPerTick = hazSkillPerHour / ticksPerHour                        # 7
+    hazAmPass = 5
+    hazAmFail = 30
+
+    random.seed()
+
+    results = []
+    for iSim in range(numSims):
+        am = startAm
+        tick = 0
+        while am > 0:
+            assert tick < 10000
+            tick += 1
+            if tick % hazardTick == 0 and tick % hazardAsRewardTick != 0 and tick % ticksPerDilemma != 0:
+                hazDiff = int(tick * hazSkillPerTick)
+                skillPickRoll = random.random()
+                if skillPickRoll < psChance:
+                    skill = ps
+                elif skillPickRoll < psChance + ssChance:
+                    skill = ss
+                else:
+                    skill = skills[math.floor(skillPickRoll*10)-4]      # range 0.600 to 0.999 -> 2 to 5
+
+                skillMin = int(skill * (1 - hazSkillVariance))
+                skillMax = int(skill * (1 + hazSkillVariance))
+                if hazDiff < skillMin:
+                    if debug:
+                        print(f'{tick}, {am}, {hazDiff}, {skillPickRoll:0.3f}, {skill}, {skillMin}, {skillMax}, 0, pass')
+                    am += hazAmPass
+                elif hazDiff > skillMax:
+                    if debug:
+                        print(f'{tick}, {am}, {hazDiff}, {skillPickRoll:0.3f}, {skill}, {skillMin}, {skillMax}, 0, fail')
+                    am -= hazAmFail
+                else:
+                    skillRoll = int(skillMin + random.random() * (skillMax - skillMin))
+                    if skillRoll >= hazDiff:
+                        if debug:
+                            print(f'{tick}, {am}, {hazDiff}, {skillPickRoll:0.3f}, {skill}, {skillMin}, {skillMax}, '
+                                  f'{skillRoll}, pass*')
+                        am += hazAmPass
+                    else:
+                        if debug:
+                            print(f'{tick}, {am}, {hazDiff}, {skillPickRoll:0.3f}, {skill}, {skillMin}, {skillMax}, '
+                                  f'{skillRoll}, fail*')
+                        am -= hazAmFail
+
+            elif tick % rewardTick != 0 and tick % hazardAsRewardTick != 0 and tick % ticksPerDilemma != 0:
+                am -= 1
+
+        # AM has run out; fell out of while loop
+        results.append(tick / ticksPerHour)
+
+    # Completed all simulations
+    results.sort()
+    if debug:
+        print(f'{len(results)} results from {results[0]} to {results[-1]}')
+    aveTime = results[int(len(results) / 2)]
+    safeTime = results[int(len(results) / 10)]
+    saferTime = results[int(len(results) / 100)]
+
+    return aveTime, safeTime, saferTime
 
 
 def voyage_estimator_simple(ps, ss, o1, o2, o3, o4, startAm, debug=False): #, numExtends=2, currentAm=0, elapsedHours=0):
@@ -20,13 +114,12 @@ def voyage_estimator_simple(ps, ss, o1, o2, o3, o4, startAm, debug=False): #, nu
 
     amPerHour = 1260
 
+    # Skill rolls are in the range skill-variance to skill+variance
     profVariance = 20 / 100
-    aveLuck = 0.5       # pass a 50% check 50% of the time
-    safeLuck = 0.1      # pass a 50% check 10% of the time
-    saferLuck = 0.01    # pass a 50% check 1% of the time
-    aveProf = 1 + profVariance * aveLuck
-    safeProf = 1 + profVariance * safeLuck
-    saferProf = 1 + profVariance * saferLuck
+    aveProf = 1
+    safeProf = 1 - profVariance * 0.90 / 2     # fail the roll 90% of the time
+    saferProf = 1 - profVariance * 0.99 / 2    # fail the roll 99% of the time
+
     psChance = 0.35
     ssChance = 0.25
     osChance = 0.1
@@ -66,7 +159,7 @@ def voyage_estimator_simple(ps, ss, o1, o2, o3, o4, startAm, debug=False): #, nu
             print('{} / {} = {}'.format(am, amPerHour, am / amPerHour))
         estimate += am / amPerHour
         if debug:
-            print("{} = {}".format(estimate, SimpleVoyageEstimator.__time_format(estimate)))
+            print("{} = {}".format(estimate, time_format(estimate)))
         estimates.append(estimate)
 
     if debug:
@@ -603,6 +696,13 @@ def voyage_calculator_cs(ps, ss, o1, o2, o3, o4, startAm, elapsedHours=0):
 
 
 if __name__ == "__main__":
-    sample_stats = [13000, 12000, 6000, 5000, 4000, 4000, 2700]
-    print(sample_stats)
-    print(voyage_estimator_simple(*sample_stats, False))
+    sample_stats = [13000, 12000, 6000, 5000, 4000, 3500, 2700]
+    meta = []
+    for _ in range(20):
+        result = voyage_estimator_redux(*sample_stats, debug=False, numSims=5000)
+        meta.append(result)
+        print(', '.join([time_format(e) for e in result]))
+    print('-d voytime ' + ' '.join([str(x) for x in sample_stats]))
+    print(time_format(sum([r[0] for r in meta])/len(meta)),
+          time_format(sum([r[1] for r in meta])/len(meta)),
+          time_format(sum([r[2] for r in meta])/len(meta)))
