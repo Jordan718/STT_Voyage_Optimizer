@@ -1,5 +1,5 @@
 import PlayerData
-from VoyageEstimator import voyage_estimator_simple as voyage_estimator
+from VoyageEstimator import voyage_estimator_redux as voyage_estimator, time_format
 import pandas as pd
 
 PS_ODDS = 0.35
@@ -26,14 +26,14 @@ CMD_COL = 'cmd'
 DIP_COL = 'dip'
 ENG_COL = 'eng'
 SEC_COL = 'sec'
-SEAT_SKILL_MAP = {SCI_SEAT1:SCI_COL, SCI_SEAT2:SCI_COL, MED_SEAT1:MED_COL, MED_SEAT2:MED_COL,
-                  CMD_SEAT1:CMD_COL, CMD_SEAT2:CMD_COL, DIP_SEAT1:DIP_COL, DIP_SEAT2:DIP_COL,
-                  ENG_SEAT1:ENG_COL, ENG_SEAT2:ENG_COL, SEC_SEAT1:SEC_COL, SEC_SEAT2:SEC_COL}
+SEAT_SKILL_MAP = {SCI_SEAT1: SCI_COL, SCI_SEAT2: SCI_COL, MED_SEAT1: MED_COL, MED_SEAT2: MED_COL,
+                  CMD_SEAT1: CMD_COL, CMD_SEAT2: CMD_COL, DIP_SEAT1: DIP_COL, DIP_SEAT2: DIP_COL,
+                  ENG_SEAT1: ENG_COL, ENG_SEAT2: ENG_COL, SEC_SEAT1: SEC_COL, SEC_SEAT2: SEC_COL}
 SEAT_LIST = SEAT_SKILL_MAP.keys()
 SEAT_LIST_ORDERED = [CMD_SEAT1, CMD_SEAT2, DIP_SEAT1, DIP_SEAT2, SEC_SEAT1, SEC_SEAT2,
                      SCI_SEAT1, SCI_SEAT2, ENG_SEAT1, ENG_SEAT2, MED_SEAT1, MED_SEAT2]
-SKILL_SEAT_MAP = {SCI_COL:[SCI_SEAT1,SCI_SEAT2], ENG_COL:[ENG_SEAT1,ENG_SEAT2], CMD_COL:[CMD_SEAT1,CMD_SEAT2],
-                  MED_COL:[MED_SEAT1,MED_SEAT2], DIP_COL:[DIP_SEAT1,DIP_SEAT2], SEC_COL:[SEC_SEAT1,SEC_SEAT2]}
+SKILL_SEAT_MAP = {SCI_COL: [SCI_SEAT1, SCI_SEAT2], ENG_COL: [ENG_SEAT1, ENG_SEAT2], CMD_COL: [CMD_SEAT1, CMD_SEAT2],
+                  MED_COL: [MED_SEAT1, MED_SEAT2], DIP_COL: [DIP_SEAT1, DIP_SEAT2], SEC_COL: [SEC_SEAT1, SEC_SEAT2]}
 SKILL_LIST = SKILL_SEAT_MAP.keys()
 
 CREW_ID_COL = 'crew_id'
@@ -59,14 +59,26 @@ class Seats:
         return int(adj_voy_score)
 
     @staticmethod
+    def pretty_skill_totals_for_bot_static(skill_totals, primary, secondary, am):
+        pri = skill_totals[primary]
+        sec = skill_totals[secondary]
+        others = ' '.join([str(value) if index != primary and index != secondary else ''
+                           for index, value in skill_totals.iteritems()])
+        others = ' '.join(others.split())       # remove any multiple consecutive spaces
+        return f'-d voytime {pri} {sec} {others} {am}'
+
+    @staticmethod
     def pretty_skill_totals_static(skill_totals, *, primary=None, secondary=None, voy_score=None):
         if voy_score is None and primary is not None and secondary is not None:
             voy_score = Seats.__calc_voy_score(skill_totals, primary, secondary)
         pairs = [f'{index}: {value:5}' for index, value in skill_totals.iteritems()]
         return ', '.join(pairs) + (f', adj. score: {voy_score}' if voy_score is not None else '')
 
+    def pretty_skill_totals_for_bot(self, primary, secondary, am):
+        return Seats.pretty_skill_totals_for_bot_static(self.skill_totals, primary, secondary, am)
+
     def pretty_skill_totals(self):
-        return Seats.pretty_skill_totals_static(self.skill_totals, self.adj_voy_score)
+        return Seats.pretty_skill_totals_static(self.skill_totals, voy_score=self.adj_voy_score)
 
     def __get_df_val(self, crew_id, col):
         return self.__df[self.__df[CREW_ID_COL] == crew_id].iloc[0][col]
@@ -83,9 +95,9 @@ class Seats:
     def __init__(self, voyageDF, primary, secondary):
         assert type(voyageDF) is pd.DataFrame, type(voyageDF)
 
-        self.seats = {seat:None for seat in SEAT_LIST}
+        self.seats = {seat: None for seat in SEAT_LIST}
         self.__df = voyageDF
-        self.skill_totals = pd.Series({skill:0 for skill in SKILL_LIST})
+        self.skill_totals = pd.Series({skill: 0 for skill in SKILL_LIST})
         self.ps = primary
         self.ss = secondary
         self.adj_voy_score = 0
@@ -108,17 +120,19 @@ class Seats:
             if debug:
                 print('Removing {} from {}', old_crew_id, seat)
                 print('Before: ', self.pretty_skill_totals())
-                print('Crew:   ', Seats.pretty_skill_totals_static(self.__get_df_skills(old_crew_id), self.ps, self.ss))
+                print('Crew:   ', Seats.pretty_skill_totals_static(self.__get_df_skills(old_crew_id),
+                                                                   primary=self.ps, secondary=self.ss))
             self.skill_totals -= self.__get_df_skills(old_crew_id)
             if debug:
                 print('After:  ', self.pretty_skill_totals())
 
-        for s,c in self.seats.items():
+        for s, c in self.seats.items():
             if c == crew_id:
                 if debug:
                     print(f'Removing {c} from {s}')
                     print('Before: ', self.pretty_skill_totals())
-                    print('Crew:   ', Seats.pretty_skill_totals_static(self.__get_df_skills(self.seats[s]), self.ps, self.ss))
+                    print('Crew:   ', Seats.pretty_skill_totals_static(self.__get_df_skills(self.seats[s]),
+                                                                       primary=self.ps, secondary=self.ss))
                 self.skill_totals -= self.__get_df_skills(self.seats[s])
                 if debug:
                     print('After:  ', self.pretty_skill_totals())
@@ -130,20 +144,21 @@ class Seats:
         self.seats[seat] = crew_id
         if debug:
             print('Before: ', self.pretty_skill_totals())
-            print('Crew:   ', Seats.pretty_skill_totals_static(self.__get_df_skills(crew_id), self.ps, self.ss))
+            print('Crew:   ', Seats.pretty_skill_totals_static(self.__get_df_skills(crew_id),
+                                                               primary=self.ps, secondary=self.ss))
         self.skill_totals += self.__get_df_skills(crew_id)
         if debug:
             print('After:  ', self.pretty_skill_totals())
 
     def is_crew_assigned(self, crew):
-        for k,v in self.seats.items():
+        for k, v in self.seats.items():
             if v == crew:
                 return True
 
         return False
 
 
-class Optimizer():
+class Optimizer:
 
     def __init__(self, player_data, primary, secondary, startAm):
         self.crew_count = len(player_data.crew)
@@ -242,7 +257,7 @@ class Optimizer():
         # Pick the two crew with the highest voyage score eligible to sit in each seat
         self.df.sort_values(by=col_to_use, ascending=False, inplace=True)
         for skill in SKILL_SEAT_MAP:
-            used_crew = set(seats.seats.values()).difference(set([None]))
+            used_crew = set(seats.seats.values()).difference({None})
             tempDF = self.df[(self.df[skill] > 0) & (~ self.df[CREW_ID_COL].isin(used_crew))]
             seats.assign(SKILL_SEAT_MAP[skill][0], tempDF.iloc[0][CREW_ID_COL])
             seats.assign(SKILL_SEAT_MAP[skill][1], tempDF.iloc[1][CREW_ID_COL])
@@ -255,24 +270,24 @@ class Optimizer():
         seats = Seats(self.df, self.primary, self.secondary)
         self.__calc_scores()
 
-        # Pick the two crew with the highest pri+sec score eligible to sit in each seat, starting with the NON-pri/sec seats
+        # Pick the two crew with the highest pri+sec score eligible to sit in each seat, starting with NON-pri/sec seats
         self.df.sort_values(by=PRISEC_COL, ascending=False, inplace=True)
         for skill in SKILL_SEAT_MAP:
             # Do the other skill seats first
             if skill != self.primary and skill != self.secondary:
-                used_crew = set(seats.seats.values()).difference(set([None]))
+                used_crew = set(seats.seats.values()).difference({None})
                 tempDF = self.df[(self.df[skill] > 0) & (~ self.df[CREW_ID_COL].isin(used_crew))]
                 seats.assign(SKILL_SEAT_MAP[skill][0], tempDF.iloc[0][CREW_ID_COL])
                 seats.assign(SKILL_SEAT_MAP[skill][1], tempDF.iloc[1][CREW_ID_COL])
 
         # Then do the secondary skill seats
-        used_crew = set(seats.seats.values()).difference(set([None]))
+        used_crew = set(seats.seats.values()).difference({None})
         tempDF = self.df[(self.df[self.secondary] > 0) & (~ self.df[CREW_ID_COL].isin(used_crew))]
         seats.assign(SKILL_SEAT_MAP[self.secondary][0], tempDF.iloc[0][CREW_ID_COL])
         seats.assign(SKILL_SEAT_MAP[self.secondary][1], tempDF.iloc[1][CREW_ID_COL])
 
         # Then do the primary skill seats
-        used_crew = set(seats.seats.values()).difference(set([None]))
+        used_crew = set(seats.seats.values()).difference({None})
         tempDF = self.df[(self.df[self.primary] > 0) & (~ self.df[CREW_ID_COL].isin(used_crew))]
         seats.assign(SKILL_SEAT_MAP[self.primary][0], tempDF.iloc[0][CREW_ID_COL])
         seats.assign(SKILL_SEAT_MAP[self.primary][1], tempDF.iloc[1][CREW_ID_COL])
@@ -281,19 +296,19 @@ class Optimizer():
 
 
 if __name__ == "__main__":
-    sample_config = ['sec','cmd',2700]
+    sample_config = ['sec', 'cmd', 2700]
     player_data = PlayerData.load_player_data()
     opt = Optimizer(player_data, *sample_config)
 
-    results = {}
-    results[SKILLMAX_COL] = opt.optimize_crew_skillmax_strategy()
-    results[VOYTOTAL_WEIGHTED_COL] = opt.optimize_crew_voytotal_strategy(use_weighted=True)
-    results[VOYTOTAL_COL] = opt.optimize_crew_voytotal_strategy(use_weighted=False)
-    results[PRISEC_COL] = opt.optimize_crew_prisec_strategy()
+    results = {SKILLMAX_COL: opt.optimize_crew_skillmax_strategy(),
+               VOYTOTAL_WEIGHTED_COL: opt.optimize_crew_voytotal_strategy(use_weighted=True),
+               VOYTOTAL_COL: opt.optimize_crew_voytotal_strategy(use_weighted=False),
+               PRISEC_COL: opt.optimize_crew_prisec_strategy()}
 
-    for k,v in results.items():
+    for strategy, (seats, durations) in results.items():
         print()
-        print(k)
-        print(v[0])
-        print(Seats.pretty_skill_totals_static(v[0].skill_totals, primary='sec', secondary='cmd'))
-        print(v[1])
+        print(strategy)
+        print(seats)
+        print(seats.pretty_skill_totals())
+        print(seats.pretty_skill_totals_for_bot(*sample_config))
+        print(', '.join([time_format(t) for t in durations]))
