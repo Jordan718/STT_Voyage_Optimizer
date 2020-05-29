@@ -1,4 +1,4 @@
-import PlayerData
+import GameData
 from VoyageEstimator import voyage_estimator_redux as voyage_estimator, time_format
 import pandas as pd
 
@@ -297,7 +297,7 @@ class Optimizer:
 
 if __name__ == "__main__":
     sample_config = ['sec', 'cmd', 2700]
-    game_data = PlayerData.load_game_data(max_days_old=7)
+    game_data = GameData.load_game_data(max_days_old=7)
     opt = Optimizer(game_data, *sample_config)
 
     results = {SKILLMAX_COL: opt.optimize_crew_skillmax_strategy(),
