@@ -90,7 +90,7 @@ def login(username, password):
         return j[ACCESS_TOKEN]
 
 
-def get_player_data(authtoken):
+def get_game_data(authtoken):
     print('Getting player data...')
     form = {'client_api': CLIENT_API_VERSION, ACCESS_TOKEN: authtoken}
     resp = requests.get(PLAYER_URL, data=form)
@@ -98,14 +98,14 @@ def get_player_data(authtoken):
     return json.loads(resp.content)
 
 
-def write_player_data_to_file(player):
+def write_game_data_to_file(player):
     print('Writing player data to file...')
     filepath = Path.home().joinpath(SUBFOLDER_NAME, PLAYER_JSON_FILENAME)
     with open(filepath, 'w') as f:
         json.dump(player, f, indent=3)
 
 
-def read_player_data_from_file():
+def read_game_data_from_file():
     print('Reading player data from file...')
     player = None
     filepath = Path.home().joinpath(SUBFOLDER_NAME, PLAYER_JSON_FILENAME)
@@ -119,7 +119,7 @@ def read_player_data_from_file():
     return player
 
 
-def get_player_data_age():
+def get_game_data_age():
     filepath = Path.home().joinpath(SUBFOLDER_NAME, PLAYER_JSON_FILENAME)
     if filepath.exists():
         last_modified = os.path.getmtime(filepath)
@@ -128,7 +128,289 @@ def get_player_data_age():
         return 99999999
 
 
-class CrewMember():
+class StaticMissionData:
+    # this data isn't in the JSON
+    MISSIONS_PER_EPISODE = {'E1': 14, 'E2': 19, 'E3': 5, 'E4': 14, 'E5': 18, 'E6': 4, 'E7': 13, 'E8': 14, 'E9': 4,
+                            'E10': 7, 'DE': 8, 'CT': 8, 'KE': 5, 'IN': 8, '??': 100000}
+
+    # some item sources are missing the dispute value for unclear reasons, so this is a workaround
+    EPISODE_FOR_MISSION_ID = {
+        117: 'E4', 120: 'DE', 121: 'CT', 123: 'CT', 125: 'DE', 126: 'DE', 128: 'DE', 129: 'CT',
+        130: 'CT', 132: 'DE', 133: 'DE', 134: 'DE', 135: 'DE', 137: 'CT', 139: 'CT', 140: 'CT',
+        210: 'E10', 214: 'E10', 216: 'E10', 220: 'E6', 221: 'E6', 224: 'E6', 225: 'E6', 227: 'E3', 233: 'E3',
+        234: 'E3', 235: 'E3', 237: 'E3',
+        548: 'KE', 549: 'KE', 550: 'KE', 551: 'KE', 552: 'KE',
+        720: 'IN', 721: 'IN', 738: 'IN', 739: 'IN', 743: 'IN', 744: 'IN', 762: 'IN', 763: 'IN',
+        837: 'E10', 838: 'E10', 842: 'E10', 843: 'E10'
+    }
+
+
+class ItemSource:
+
+    # types
+    AWAY_TEAM = 0
+    FACTION_ONLY = 1
+    SPACE_BATTLE = 2
+    RARE_REWARD = 3
+
+    def __init__(self):
+        self.type = -1
+        self.id = -1
+        self.name = None
+        self.energy_quotient = -1
+        self.chance_grade = -1
+        # JSON mission is the mission number anti-mod number of missions in the episode.
+        # for example, episode 7 has 13 missions, so mission 33 is M7-E7
+        # weirdly, sometimes the JSON mission is multiples of the number of missions, but the mod still works
+        # for example, E6-M3 is JSON mission 19 even though there are only 4 missions in E6 (but 19%4=3 so it's ok)
+        self.mission = -1
+        # episode = dispute + 1
+        # for unknown reasons, sometimes the dispute is missing, so use the MISSIONS_PER_EPISODE as a workaround
+        self.episode = None
+        # I thought mastery: 0 is normal, 1 is elite, 2 is epic but now I'm not sure
+        self.mastery = -1
+
+    def is_rare_reward(self):
+        return self.type == self.RARE_REWARD
+
+    def is_faction_only(self):
+        return self.type == self.FACTION_ONLY
+
+    def __str__(self):
+        return f'{self.episode}-{self.mission} {self.name}' + ' (Rare reward)' if self.is_rare_reward() else ''
+
+
+class Item:
+
+    def __init__(self):
+        self.id = -1
+        self.symbol = None
+        self.type = -1
+        self.name = None
+        self.rarity = -1
+        # recipe = dict of demands; archetype_id: count
+        self.recipe = None
+        # sources = list of missions; id, name, energy_quotient, chance_grade
+        self.sources = None
+        self.bonuses = None
+
+    def __str__(self):
+        return str(f'{self.rarity}* {self.name}')
+
+#    def __repr__(self):
+#        s = ''
+#        for a in self.__dict__:
+#            s += ', {}:{}'.format(a, self.__getattribute__(a))
+#        return '[' + s[2:] + ']'
+
+
+class ItemsData:
+    '''
+    JSON structure (of interest):
+    item_archetype_cache
+        archetypes
+            <list item>
+                id
+                symbol
+                type
+                name
+                rarity
+                recipe
+                    demands
+                        <list item>
+                            archetype_id
+                            count
+                        <list item>
+                        ...
+                    validity_hash
+                item_sources
+                    <list item>
+                        challenge_id            <-- ignore; refers to away team mission crit nodes
+                        challenge_skill         <-- ignore; refers to away team mission crit nodes
+                        challenge_difficulty    <-- ignore; refers to away team mission crit nodes
+                        type: 0 (away team) or 2 (space battle)
+                        id
+                        name
+                        energy_quotient
+                        chance_grade (1-5? number of pips displayed?)
+                        place
+                        mission
+                        mastery
+                    <list item> (faction)
+                        type: 1
+                        id
+                        name: <faction name> Transmission
+                        energy_quotient
+                        chance_grade
+                    <list item>
+                    ...
+                bonuses (optional?)
+                    "<number>":<number> (not sure what these are)
+                    "<number>":<number>
+                    ...
+            <list item>
+            ...
+    '''
+
+    __ID_KEY = 'id'
+    __SYMBOL_KEY = 'symbol'
+    __NAME_KEY = 'name'
+    __TYPE_KEY = 'type'
+    __RARITY_KEY = 'rarity'
+    __RECIPE_KEY = 'recipe'
+    __DEMANDS_KEY = 'demands'
+    __ARCHETYPE_ID_KEY = 'archetype_id'
+    __COUNT_KEY = 'count'
+    __ITEM_SOURCES_KEY = 'item_sources'
+    __ENERGY_QUOTIENT_KEY = 'energy_quotient'
+    __CHANCE_GRADE_KEY = 'chance_grade'
+    __MISSION_KEY = 'mission'
+    __DISPUTE_KEY = 'dispute'
+    __MASTERY_KEY = 'mastery'
+    __BONUSES_KEY = 'bonuses'
+
+    def __init__(self, game_data_items):
+        self.__raw_data = game_data_items
+        self.items = {}
+        print('Parsing {} items...'.format(len(game_data_items)))
+        missing_missions = set()
+        for item_data in self.__raw_data:
+            item = Item()
+            item.id = item_data[self.__ID_KEY]
+            item.symbol = item_data[self.__SYMBOL_KEY]
+            item.type = item_data[self.__TYPE_KEY]
+            item.name = item_data[self.__NAME_KEY]
+            item.rarity = item_data[self.__RARITY_KEY]
+
+            if self.__RECIPE_KEY in item_data and len(item_data[self.__RECIPE_KEY]) > 0:
+                item.recipe = {}
+                for demand in item_data[self.__RECIPE_KEY][self.__DEMANDS_KEY]:
+                    item.recipe[demand[self.__ARCHETYPE_ID_KEY]] = demand[self.__COUNT_KEY]
+
+            if len(item_data[self.__ITEM_SOURCES_KEY]) > 0:
+                item.sources = []
+                for src in item_data[self.__ITEM_SOURCES_KEY]:
+                    item_source = ItemSource()
+                    item_source.type = src[self.__TYPE_KEY]
+                    item_source.id = src[self.__ID_KEY]
+                    item_source.name = src[self.__NAME_KEY]
+                    item_source.energy_quotient = src[self.__ENERGY_QUOTIENT_KEY]
+                    item_source.chance_grade = src[self.__CHANCE_GRADE_KEY]
+                    if not item_source.is_faction_only():
+                        item_source.mastery = src[self.__MASTERY_KEY]
+
+                        # for unknown reasons, sometimes the dispute is missing, so use the MISSIONS_PER_EPISODE as a
+                        # workaround
+                        if self.__DISPUTE_KEY in src:
+                            item_source.episode = f'E{src[self.__DISPUTE_KEY] + 1}'
+                        elif item_source.id in StaticMissionData.EPISODE_FOR_MISSION_ID:
+                            item_source.episode = StaticMissionData.EPISODE_FOR_MISSION_ID[item_source.id]
+                        else:
+                            missing_missions.add(f'{item_source.id} {item_source.name}')
+                            item_source.episode = '??'
+
+                        item_source.mission = src[self.__MISSION_KEY] % \
+                                              StaticMissionData.MISSIONS_PER_EPISODE[item_source.episode]
+
+            if self.__BONUSES_KEY in item_data:
+                self.bonuses = item_data[self.__BONUSES_KEY]
+
+            self.items[item.id] = item
+
+        for mission_id in sorted(missing_missions):
+            print(f'Need episode for mission id {mission_id} added to EPISODE_FOR_MISSION_ID dict')
+
+#        print(f'Loaded {len(self.items)} items')
+
+
+class GalaxyEventData:
+    '''
+    JSON structure (of interest):
+    action
+    player
+        character
+            events
+                id
+                name
+                featured_crew
+                    id
+                    name
+                    full_name
+                    rarity
+                    skills
+                        science_skill
+                            core
+                            range_min
+                            range_max
+                        diplomacy_skill
+                        command_skill
+                    traits
+                content
+                    content_type: "gather" (for galaxy events)
+                    crew_bonuses
+                        <crew name>: <bonus multiplier: 5 or 10>
+                gather_pools
+                    <list item>
+                        id
+                        adventures
+                            id
+                            name
+                            description
+                            demands
+                                <list item>
+                                    archetype_id
+                                    count
+                                <list item>
+                                    archetype_id
+                                    count
+                            golden_octopus: true|false  (ignore true; represents the SR build item count/recipe)
+                    <list item>
+                    <list item>
+    item_archetype_cache
+        archetypes
+            <list item>
+                id
+                symbol
+                type
+                name
+                rarity
+                recipe
+                    demands
+                        <list item>
+                            archetype_id
+                            count
+                        <list item>
+                        ...
+                    validity_hash
+                item_sources
+                    <list item>
+                        challenge_id
+                        challenge_skill
+                        challenge_difficulty
+                        type: 0 (away team) or 2 (space battle)
+                        id
+                        name
+                        energy_quotient
+                        chance_grade (1-5? number of pips displayed?)
+                        place
+                        mission
+                        mastery
+                    <list item>
+                    ...
+                    <list item> (faction)
+                        type: 1
+                        id
+                        name: <faction name> Transmission
+                        energy_quotient
+                        chance_grade
+                bonuses (optional?)
+                    <number> (not sure what these are)
+                    <number>
+                    ...
+    '''
+
+
+class CrewMember:
 
     def __init__(self):
         self.name = None
@@ -149,11 +431,10 @@ class CrewMember():
         return '[' + s[2:] + ']'
 
 
-class PlayerData():
+class CrewData:
 
     '''
     JSON structure (of interest):
-    action
     player
         character
             crew
@@ -171,24 +452,16 @@ class PlayerData():
                         range_min
                         range_max
                     command_skill
-    item_archetype_cache
     '''
 
-    __ITEM_KEY = 'item_archetype_cache'
-    __ACTION_KEY = 'action'
-    __PLAYER_KEY = 'player'
     __ATTR_OF_INTEREST = set(['id','name','short_name','level','rarity','max_rarity','traits','traits_hidden','skills'])
     __VOYAGE_ATTR = set(['id','name','cmd_voy','dip_voy','sec_voy','eng_voy','sci_voy','med_voy','traits'])
     __VOYAGE_DF_COLS = ['crew_id','name','cmd','dip','sec','eng','sci','med','traits']
 
-    def __init__(self, player_data):
-        assert type(player_data) is dict, type(player_data)
-        assert self.__ITEM_KEY in player_data and self.__ACTION_KEY in player_data and self.__PLAYER_KEY in player_data
-
-        self.__raw_data = player_data
+    def __init__(self, game_data_player):
         self.crew = []
-        print('Parsing {} crew members...'.format(len(player_data[self.__PLAYER_KEY]['character']['crew'])))
-        for crew_member_data in player_data[self.__PLAYER_KEY]['character']['crew']:
+        print('Parsing {} crew members...'.format(len(game_data_player['character']['crew'])))
+        for crew_member_data in game_data_player['character']['crew']:
             cm = CrewMember()
             for k in crew_member_data:
                 if k in self.__ATTR_OF_INTEREST:
@@ -228,17 +501,34 @@ class PlayerData():
 #        self.voyDF.set_index('crew_id', inplace=True, verify_integrity=True)
 
 
-def load_player_data(max_days_old=7):
-    data_age = get_player_data_age()
-    if data_age >= max_days_old:
-        print('Player data is {}; will download'.format(
-            'missing' if data_age > 9999 else f'{data_age:1.1f} days old (exceeds {max_days_old} day limit)'))
-        player = None
-    else:
-        print(f'Player data is {data_age:1.1f} days old (within {max_days_old} day limit); will use stored data')
-        player = read_player_data_from_file()
+class GameData:
 
-    if player is None:
+    __PLAYER_KEY = 'player'
+    __ITEM_CACHE_KEY = 'item_archetype_cache'
+    __ARCHETYPES_KEY = 'archetypes'
+
+    def __init__(self, game_data):
+        assert type(game_data) is dict, type(game_data)
+        assert self.__PLAYER_KEY in game_data
+        assert self.__ITEM_CACHE_KEY in game_data
+        assert self.__ARCHETYPES_KEY in game_data[self.__ITEM_CACHE_KEY]
+
+        self.__raw_data = game_data
+        self.crew_data = CrewData(game_data[self.__PLAYER_KEY])
+        self.items_data = ItemsData(game_data[self.__ITEM_CACHE_KEY][self.__ARCHETYPES_KEY])
+
+
+def load_game_data(max_days_old=7):
+    data_age = get_game_data_age()
+    if data_age >= max_days_old:
+        print('Game data is {}; will download'.format(
+            'missing' if data_age > 9999 else f'{data_age:1.1f} days old (exceeds {max_days_old} day limit)'))
+        game_data_json = None
+    else:
+        print(f'Game data is {data_age:1.1f} days old (within {max_days_old} day limit); will use stored data')
+        game_data_json = read_game_data_from_file()
+
+    if game_data_json is None:
         authtoken = read_auth_token_from_file()
         if authtoken is None:
             username, password = read_creds_from_file()
@@ -249,13 +539,13 @@ def load_player_data(max_days_old=7):
                 return None
             write_auth_token_to_file(authtoken)
 
-        player = get_player_data(authtoken)
-        if player is not None:
-            write_player_data_to_file(player)
+        game_data_json = get_game_data(authtoken)
+        if game_data_json is not None:
+            write_game_data_to_file(game_data_json)
 
-    return PlayerData(player)
+    return GameData(game_data_json)
 
 
 if __name__ == "__main__":
-    data = load_player_data(max_days_old=7)
+    data = load_game_data(max_days_old=7)
 

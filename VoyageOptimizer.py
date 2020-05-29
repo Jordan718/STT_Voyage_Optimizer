@@ -160,9 +160,9 @@ class Seats:
 
 class Optimizer:
 
-    def __init__(self, player_data, primary, secondary, startAm):
-        self.crew_count = len(player_data.crew)
-        self.df = player_data.voyDF
+    def __init__(self, game_data, primary, secondary, startAm):
+        self.crew_count = len(game_data.crew_data.crew)
+        self.df = game_data.crew_data.voyDF
         self.primary = primary
         self.secondary = secondary
         self.startAm = startAm
@@ -297,8 +297,8 @@ class Optimizer:
 
 if __name__ == "__main__":
     sample_config = ['sec', 'cmd', 2700]
-    player_data = PlayerData.load_player_data()
-    opt = Optimizer(player_data, *sample_config)
+    game_data = PlayerData.load_game_data(max_days_old=7)
+    opt = Optimizer(game_data, *sample_config)
 
     results = {SKILLMAX_COL: opt.optimize_crew_skillmax_strategy(),
                VOYTOTAL_WEIGHTED_COL: opt.optimize_crew_voytotal_strategy(use_weighted=True),
