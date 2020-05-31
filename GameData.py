@@ -128,30 +128,260 @@ def get_game_data_age():
         return 99999999
 
 
-class StaticMissionData:
+class StaticGameData:
+
+    # Item source types
+    class __ItemSourceTypes:
+        @property
+        def AWAY_TEAM(self):
+            return 0
+
+        @property
+        def FACTION_ONLY(self):
+            return 1
+
+        @property
+        def SPACE_BATTLE(self):
+            return 2
+
+        @property
+        def RARE_REWARD(self):
+            return 3
+
+    ITEM_SOURCE_TYPES = __ItemSourceTypes()
+
+
     # this data isn't in the JSON
-    MISSIONS_PER_EPISODE = {'E1': 14, 'E2': 19, 'E3': 5, 'E4': 14, 'E5': 18, 'E6': 4, 'E7': 13, 'E8': 14, 'E9': 4,
-                            'E10': 7, 'DE': 8, 'CT': 8, 'KE': 5, 'IN': 8, '??': 100000}
+#    MISSIONS_PER_EPISODE = {'E1': 14, 'E2': 19, 'E3': 5, 'E4': 14, 'E5': 18, 'E6': 4, 'E7': 13, 'E8': 14, 'E9': 4,
+#                            'E10': 7, 'DE': 8, 'CT': 8, 'KE': 5, 'IN': 8, '??': 100000}
 
     # some item sources are missing the dispute value for unclear reasons, so this is a workaround
-    EPISODE_FOR_MISSION_ID = {
-        117: 'E4', 120: 'DE', 121: 'CT', 123: 'CT', 125: 'DE', 126: 'DE', 128: 'DE', 129: 'CT',
-        130: 'CT', 132: 'DE', 133: 'DE', 134: 'DE', 135: 'DE', 137: 'CT', 139: 'CT', 140: 'CT',
-        210: 'E10', 214: 'E10', 216: 'E10', 220: 'E6', 221: 'E6', 224: 'E6', 225: 'E6', 227: 'E3', 233: 'E3',
-        234: 'E3', 235: 'E3', 237: 'E3',
-        548: 'KE', 549: 'KE', 550: 'KE', 551: 'KE', 552: 'KE',
-        720: 'IN', 721: 'IN', 738: 'IN', 739: 'IN', 743: 'IN', 744: 'IN', 762: 'IN', 763: 'IN',
-        837: 'E10', 838: 'E10', 842: 'E10', 843: 'E10'
+    __MISSION_INFO_FOR_ID = {
+        91:  ('E1', 'M1', 'The Wrong Crowd'),
+        93:  ('E1', 'M2', 'His Own Man'),
+        94:  ('E1', 'M3', 'The Prodigal Son'),
+        85:  ('E1', 'M4', 'Assault and Battery'),
+        89:  ('E1', 'M5', 'On Their Heels'),
+        90:  ('E1', 'M6', 'A Father Figure'),
+        80:  ('E1', 'M7', 'Pillage and Plunder'),
+        79:  ('E1', 'M8', 'Beyond the Call'),
+        78:  ('E1', 'M9', 'Double Trouble'),
+        102: ('E1', 'M10', 'Stolen Honor'),
+        105: ('E1', 'M11', 'Behind Closed Doors'),
+        104: ('E1', 'M12', 'A Logical Response'),
+        101: ('E1', 'M13', 'Right of Conquest'),
+        76:  ('E1', 'M14A', 'Cleansing Fire'),
+        100: ('E1', 'M14B', 'Hook Or By Crook'),
+
+        53:  ('E2', 'M1', 'Under New Management'),
+        58:  ('E2', 'M2', 'The Vedek\'s Trail'),
+        59:  ('E2', 'M3', 'The Army of Anaydis'),
+        60:  ('E2', 'M4', 'The Mad Vedek'),
+        40:  ('E2', 'M5', 'Manna from Heaven'),
+        38:  ('E2', 'M6', 'Not A Drop to Drink'),
+        39:  ('E2', 'M7', 'Hot Pursuit'),
+        42:  ('E2', 'M8', 'Rescue the Val Jean'),
+        45:  ('E2', 'M9', 'Maquis Incitement'),
+        41:  ('E2', 'M10', 'The Walls Have Ears'),
+        68:  ('E2', 'M11', 'Off at the Pass'),
+        71:  ('E2', 'M12', 'Internal Dispute'),
+        49:  ('E2', 'M13', 'For His Own Good'),
+        48:  ('E2', 'M14', 'Cardassian Hospitality'),
+        52:  ('E2', 'M15', 'Temporary Hold'),
+        30:  ('E2', 'M16', 'Picking the Bones'),
+        32:  ('E2', 'M17', 'Pretense of Mercy'),
+        31:  ('E2', 'M18', 'A Popular Item'),
+        62:  ('E2', 'M19A', 'The Toss'),
+        73:  ('E2', 'M19B', 'Man With a Plan'),
+        64:  ('E2', 'M19C', 'A New Recruit'),
+
+        227: ('E3', 'M1', 'Family Squabble'),
+        233: ('E3', 'M2', 'Cytherian Highway'),
+        234: ('E3', 'M3', 'A Singular Occurrence'),
+        235: ('E3', 'M4', 'Organian Aid'),
+        237: ('E3', 'M5', 'Rockslide'),
+
+        191: ('E4', 'M1', 'Ishka Issues'),
+        185: ('E4', 'M2', 'Not Without A Fight'),
+        188: ('E4', 'M3', 'A Kazon Scorned'),
+        189: ('E4', 'M4', 'Common Ground'),
+        179: ('E4', 'M5', 'Going Viral'),
+        181: ('E4', 'M6', 'Self Control'),
+        183: ('E4', 'M7', 'Mutual Assured Destruction'),
+        203: ('E4', 'M8', 'Arms Race'),
+        205: ('E4', 'M9', 'Fan Club'),
+        204: ('E4', 'M10', 'Trial by Fire'),
+        198: ('E4', 'M11', 'He Means Well'),
+        199: ('E4', 'M12', 'For the People'),
+        200: ('E4', 'M13', 'With Friends Like These'),
+        195: ('E4', 'M14A', 'Putting the Free in Freedom'),
+        193: ('E4', 'M14B', 'Smiles and Knives'),
+
+        261: ('E5', 'M1', 'Quell the Riots'),
+        257: ('E5', 'M2', 'A Bold Move'),
+        254: ('E5', 'M3', 'Coursing Hounds'),
+        255: ('E5', 'M4', 'Race to the Finish'),
+        247: ('E5', 'M5', 'Blunting the Dagger'),
+        245: ('E5', 'M6', 'Secure the Chavez'),
+        243: ('E5', 'M7', 'Salvage the Chavez'),
+        249: ('E5', 'M8', 'Act of Betrayal'),
+        269: ('E5', 'M9', 'Control Over Chaos'),
+        262: ('E5', 'M10', 'Proof of Concept'),
+        267: ('E5', 'M11', 'Saving Smiley O\'Brien'),
+        265: ('E5', 'M12', 'Into His Own Hands'),
+        276: ('E5', 'M13', 'Instant Intervention'),
+        272: ('E5', 'M14', 'Back to School'),
+        275: ('E5', 'M15', 'Turncoat Outpost'),
+        270: ('E5', 'M16', 'Baited Hook'),
+        273: ('E5', 'M17', 'Long Live the King'),
+        241: ('E5', 'M18A', 'Thy Enemy\'s Secrets'),
+        250: ('E5', 'M18B', 'The Annihilation Syndrome'),
+
+        221: ('E6', 'M1', 'The Rings of Time'),
+        225: ('E6', 'M2', 'Ancient Guardians'),
+        224: ('E6', 'M3', 'Too Greedily and Too Deep'),
+        220: ('E6', 'M4', 'The Time Transporter'),
+
+        310: ('E7', 'M1', 'Improvised Entry'),
+        311: ('E7', 'M2', 'Battle Shinzon'),
+        309: ('E7', 'M3', 'Material Assistance'),
+        297: ('E7', 'M4', 'The Raptors\' Fury'),
+        299: ('E7', 'M5', 'Right Place, Wrong Time'),
+        300: ('E7', 'M6', 'Striking at Shadows'),
+        316: ('E7', 'M7', 'One Future Ends'),
+        319: ('E7', 'M8', 'Retroactive Vengeance'),
+        322: ('E7', 'M9', 'Researching Future History'),
+        313: ('E7', 'M10', 'Trust Issues'),
+        314: ('E7', 'M11', 'Hounded'),
+        315: ('E7', 'M12', 'Lost Legacy'),
+        324: ('E7', 'M13A', 'Garak\'s Gamble'),
+        303: ('E7', 'M13B', 'Death\'s Endeavor'),
+
+        146: ('E8', 'M1', 'Evacuation Orders'),
+        142: ('E8', 'M2', 'Change of Scenery'),
+        144: ('E8', 'M3', 'Field Modifications'),
+        145: ('E8', 'M4', 'Shielding the Prey'),
+        148: ('E8', 'M5', 'The Verge of Destruction'),
+        149: ('E8', 'M6', 'Surveying the Sphere'),
+        150: ('E8', 'M7', 'The Vanguard\'s Challenge'),
+        159: ('E8', 'M8', 'Boardroom Politics'),
+        157: ('E8', 'M9', 'Ostensible Proof'),
+        156: ('E8', 'M10', 'Back Into the Fold'),
+        161: ('E8', 'M11', 'Uprising'),
+        160: ('E8', 'M12', 'Feed A Fever'),
+        163: ('E8', 'M13', 'Lashing Out'),
+        152: ('E8', 'M14A', 'Proven Toxicity'),
+        167: ('E8', 'M14B', 'Going Viral'),
+
+        784: ('E9', 'M1', 'Rapid Response'),
+        780: ('E9', 'M2', 'Into the Lion\'s Den'),
+        778: ('E9', 'M3', 'Kicking the Nest'),
+        782: ('E9', 'M4A', 'Bearing Up'),
+        777: ('E9', 'M4B', 'Scatter Thine Enemies'),
+
+        214: ('E10', 'M1', 'Fool Me Twice'),
+        216: ('E10', 'M2', 'Highway to Hell'),
+        210: ('E10', 'M3', 'Ruinous Staycation'),
+        837: ('E10', 'M4', 'Flash of Lightning'),
+        843: ('E10', 'M5', 'An Infinite Welcome'),
+        842: ('E10', 'M6', 'Into the Cave'),
+        838: ('E10', 'M7', 'Our Harshest Critic'),
+
+        132: ('DE', 'M1', 'Long Distance Call'),
+        128: ('DE', 'M2', 'A Tale of Forgotten Lore'),
+        135: ('DE', 'M3', 'Highwaymen'),
+        126: ('DE', 'M4', 'A Time of Morn-ing'),
+        133: ('DE', 'M5', 'Indiscriminate Mind'),
+        125: ('DE', 'M6', 'Mortals and Mayhem'),
+        134: ('DE', 'M7', 'Death in Battle'),
+        120: ('DE', 'M8', 'Iconian Insider'),
+
+        139: ('CT', 'M1', 'Warranted Pursuit'),
+        129: ('CT', 'M2', 'Rabid Fans'),
+        130: ('CT', 'M3', 'Pirate Problems'),
+        117: ('CT', 'M4', 'The Professor\'s Deadline'),
+        137: ('CT', 'M5', 'Death Throes'),
+        121: ('CT', 'M6', 'Serious Business'),
+        140: ('CT', 'M7', 'No Returns Accepted'),
+        123: ('CT', 'M8', 'Operation Isolate'),
+
+        551: ('KE', 'M1', 'Leverage'),
+        550: ('KE', 'M2', 'Stolen Command'),
+        548: ('KE', 'M3', 'Dogs of War'),
+        549: ('KE', 'M4', 'A Ticking Bomb'),
+        552: ('KE', 'M5', 'All Sales Are Final'),
+
+        721: ('IN', 'M1', 'Xahean Invasion'),
+        720: ('IN', 'M2', 'The Price of Friendship'),
+        739: ('IN', 'M3', 'Empty Vessel'),
+        738: ('IN', 'M4', 'Zora\'s Invitation'),
+        743: ('IN', 'M5', 'Starved for Attention'),
+        744: ('IN', 'M6', 'Bottom Feeders'),
+        763: ('IN', 'M7', 'Stealing the Stars'),
+        762: ('IN', 'M8', 'Mudd\'s Enterprise'),
     }
+
+    @classmethod
+    def get_string_for_mission_id(cls, mission_id):
+        return f'{cls.__MISSION_INFO_FOR_ID[mission_id][0]}-{cls.__MISSION_INFO_FOR_ID[mission_id][1]} ' \
+               f'{cls.__MISSION_INFO_FOR_ID[mission_id][2]}'
+
+
+class Faction:
+
+    def __init__(self):
+        self.id = -1
+        self.name = None
+        self.reputation = -1
+        self.discovered = -1
+        self.completed_shuttle_adventures = -1
+        self.shuttle_token_id = -1
+
+
+class FactionsData:
+    '''
+    JSON structure (of interest):
+    player
+        character
+            factions
+                <list item>
+                    id
+                    name
+                    reputation
+                    discovered                          <-- 1 for yes, 0? for no
+                    completed_shuttle_adventures
+                    shuttle_token_id
+                <list item>
+                ...
+    '''
+
+    __ATTR_OF_INTEREST = set(['id', 'name', 'reputation', 'discovered', 'completed_shuttle_adventures', 'shuttle_token_id'])
+    __STATIC_REFERENCE_TO_DATA = None
+
+    def __init__(self, game_data_player):
+        FactionsData.__STATIC_REFERENCE_TO_DATA = self
+        self.factions = {}
+        self.__shuttle_token_id_to_faction_id = {}
+        self.__raw_data = game_data_player['character']['factions']
+        print(f'Parsing {len(self.__raw_data)} factions...')
+        for faction_data in self.__raw_data:
+            fac = Faction()
+            for k in faction_data:
+                if k in self.__ATTR_OF_INTEREST:
+                    fac.__setattr__(k, faction_data[k])
+            self.factions[fac.id] = fac
+            self.__shuttle_token_id_to_faction_id[fac.shuttle_token_id] = fac.id
+
+    def get_transmission_name_for_shuttle_token_id(self, shuttle_token_id):
+        return self.factions[self.__shuttle_token_id_to_faction_id[shuttle_token_id]].name + ' Transmission'
+
+    @classmethod
+    def get_transmission_name_for_shuttle_token_id_static(cls, shuttle_token_id):
+        assert cls.__STATIC_REFERENCE_TO_DATA is not None
+        return cls.__STATIC_REFERENCE_TO_DATA.get_transmission_name_for_shuttle_token_id(shuttle_token_id)
 
 
 class ItemSource:
-
-    # types
-    AWAY_TEAM = 0
-    FACTION_ONLY = 1
-    SPACE_BATTLE = 2
-    RARE_REWARD = 3
 
     def __init__(self):
         self.type = -1
@@ -159,25 +389,32 @@ class ItemSource:
         self.name = None
         self.energy_quotient = -1
         self.chance_grade = -1
+        # I thought mastery: 0 is normal, 1 is elite, 2 is epic but now I'm not sure
+        self.mastery = -1
+
+        # I thought the following was the case, but it is not!  I don't know what the JSON mission is!
         # JSON mission is the mission number anti-mod number of missions in the episode.
         # for example, episode 7 has 13 missions, so mission 33 is M7-E7
         # weirdly, sometimes the JSON mission is multiples of the number of missions, but the mod still works
         # for example, E6-M3 is JSON mission 19 even though there are only 4 missions in E6 (but 19%4=3 so it's ok)
-        self.mission = -1
-        # episode = dispute + 1
-        # for unknown reasons, sometimes the dispute is missing, so use the MISSIONS_PER_EPISODE as a workaround
-        self.episode = None
-        # I thought mastery: 0 is normal, 1 is elite, 2 is epic but now I'm not sure
-        self.mastery = -1
+#        self.episode = None
+#        self.mission = None
+
+        # I'm not sure what dispute is...
+#        self.dispute = None
 
     def is_rare_reward(self):
-        return self.type == self.RARE_REWARD
+        return self.type == StaticGameData.ITEM_SOURCE_TYPES.RARE_REWARD
 
     def is_faction_only(self):
-        return self.type == self.FACTION_ONLY
+        return self.type == StaticGameData.ITEM_SOURCE_TYPES.FACTION_ONLY
 
     def __str__(self):
-        return f'{self.episode}-{self.mission} {self.name}' + ' (Rare reward)' if self.is_rare_reward() else ''
+        if self.is_faction_only():
+            return FactionsData.get_transmission_name_for_shuttle_token_id_static(self.id)
+        else:
+            return f'{StaticGameData.get_string_for_mission_id(self.id)}' + \
+                   (' (Rare reward)' if self.is_rare_reward() else '')
 
 
 class Item:
@@ -197,11 +434,20 @@ class Item:
     def __str__(self):
         return str(f'{self.rarity}* {self.name}')
 
-#    def __repr__(self):
-#        s = ''
-#        for a in self.__dict__:
-#            s += ', {}:{}'.format(a, self.__getattribute__(a))
-#        return '[' + s[2:] + ']'
+    def get_sources_string(self, include_rare_rewards=False):
+        if self.sources is None:
+            return None
+
+        source_strings = []
+        for src in self.sources:
+            if src.is_rare_reward() and not include_rare_rewards:
+                continue
+
+            mission_string = str(src)
+            if not src.is_faction_only():
+                assert mission_string.find(src.name) > 0, f'{mission_string}\n{src.name}'
+            source_strings.append(f'\t{mission_string}')
+        return f'{len(source_strings)} sources:\n' + '\n'.join(source_strings)
 
 
 class ItemsData:
@@ -296,21 +542,12 @@ class ItemsData:
                     item_source.name = src[self.__NAME_KEY]
                     item_source.energy_quotient = src[self.__ENERGY_QUOTIENT_KEY]
                     item_source.chance_grade = src[self.__CHANCE_GRADE_KEY]
+                    if self.__DISPUTE_KEY in src:
+                        item_source.dispute = src[self.__DISPUTE_KEY]
                     if not item_source.is_faction_only():
                         item_source.mastery = src[self.__MASTERY_KEY]
 
-                        # for unknown reasons, sometimes the dispute is missing, so use the MISSIONS_PER_EPISODE as a
-                        # workaround
-                        if self.__DISPUTE_KEY in src:
-                            item_source.episode = f'E{src[self.__DISPUTE_KEY] + 1}'
-                        elif item_source.id in StaticMissionData.EPISODE_FOR_MISSION_ID:
-                            item_source.episode = StaticMissionData.EPISODE_FOR_MISSION_ID[item_source.id]
-                        else:
-                            missing_missions.add(f'{item_source.id} {item_source.name}')
-                            item_source.episode = '??'
-
-                        item_source.mission = src[self.__MISSION_KEY] % \
-                                              StaticMissionData.MISSIONS_PER_EPISODE[item_source.episode]
+                    item.sources.append(item_source)
 
             if self.__BONUSES_KEY in item_data:
                 self.bonuses = item_data[self.__BONUSES_KEY]
@@ -319,8 +556,6 @@ class ItemsData:
 
         for mission_id in sorted(missing_missions):
             print(f'Need episode for mission id {mission_id} added to EPISODE_FOR_MISSION_ID dict')
-
-#        print(f'Loaded {len(self.items)} items')
 
 
 class GalaxyEventData:
@@ -498,7 +733,6 @@ class CrewData:
             rows_list.append(d)
 
         self.voyDF = pd.DataFrame(rows_list, columns=self.__VOYAGE_DF_COLS)
-#        self.voyDF.set_index('crew_id', inplace=True, verify_integrity=True)
 
 
 class GameData:
@@ -515,6 +749,7 @@ class GameData:
 
         self.__raw_data = game_data
         self.crew_data = CrewData(game_data[self.__PLAYER_KEY])
+        self.factions_data = FactionsData(game_data[self.__PLAYER_KEY])
         self.items_data = ItemsData(game_data[self.__ITEM_CACHE_KEY][self.__ARCHETYPES_KEY])
 
 
@@ -548,4 +783,3 @@ def load_game_data(max_days_old=7):
 
 if __name__ == "__main__":
     data = load_game_data(max_days_old=7)
-
