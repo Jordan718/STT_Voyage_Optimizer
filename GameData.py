@@ -434,7 +434,7 @@ class Item:
     def __str__(self):
         return str(f'{self.rarity}* {self.name}')
 
-    def get_sources_string(self, include_rare_rewards=False):
+    def get_sources_string(self, *, include_rare_rewards=False, tab_count=0):
         if self.sources is None:
             return None
 
@@ -447,7 +447,24 @@ class Item:
             if not src.is_faction_only():
                 assert mission_string.find(src.name) > 0, f'{mission_string}\n{src.name}'
             source_strings.append(f'\t{mission_string}')
-        return f'{len(source_strings)} sources:\n' + '\n'.join(source_strings)
+
+        tabs = '\t' * tab_count
+        print(f'{len(source_strings)} sources:')
+        for s in source_strings:
+            print(f'\t{s}')
+        return f'{tabs}{len(source_strings)} sources:\n' + f'\n{tabs}'.join(source_strings)
+
+    def get_recipe_string(self, *, tab_count=0):
+        if self.recipe is None:
+            return None
+
+        tabs = '\t' * tab_count
+        demand_strings = []
+        for item_id, count in self.recipe.items():
+            item = ItemsData.get_item_by_archetype_id_static(item_id)
+            demand_strings.append(f'{tabs}{count} of {item}')
+
+        return f'{tabs}Recipe of {len(demand_strings)} demands:\n\t' + f'\n\t'.join(demand_strings)
 
 
 class ItemsData:
@@ -515,7 +532,10 @@ class ItemsData:
     __MASTERY_KEY = 'mastery'
     __BONUSES_KEY = 'bonuses'
 
+    __STATIC_REFERENCE_TO_DATA = None
+
     def __init__(self, game_data_items):
+        ItemsData.__STATIC_REFERENCE_TO_DATA = self
         self.__raw_data = game_data_items
         self.items = {}
         print('Parsing {} items...'.format(len(game_data_items)))
@@ -557,6 +577,41 @@ class ItemsData:
         for mission_id in sorted(missing_missions):
             print(f'Need episode for mission id {mission_id} added to EPISODE_FOR_MISSION_ID dict')
 
+    @classmethod
+    def get_item_by_archetype_id_static(cls, archetype_id):
+        assert cls.__STATIC_REFERENCE_TO_DATA is not None
+        return cls.__STATIC_REFERENCE_TO_DATA.items[archetype_id]
+
+
+class GalaxyEvent:
+
+    def __init__(self):
+        self.id = -1
+        self.name = None
+        self.featured_crew = []
+        # Content type should always be "gather" for galaxy events
+        self.content_type = None
+        self.crew_bonuses = None
+        self.gather_pools = []
+
+
+class GatherPool:
+
+    def __init__(self):
+        self.id = -1
+        self.goal_index = -1
+        self.adventures = {}
+
+
+class Adventure:
+
+    def __init__(self):
+        self.id = -1
+        self.name = None
+        self.description = None
+        self.demands = {}
+        self.golden_octopus = False
+
 
 class GalaxyEventData:
     '''
@@ -565,84 +620,98 @@ class GalaxyEventData:
     player
         character
             events
-                id
-                name
-                featured_crew
+                <list item>             <-- presumably only one element in the list
                     id
                     name
-                    full_name
-                    rarity
-                    skills
-                        science_skill
-                            core
-                            range_min
-                            range_max
-                        diplomacy_skill
-                        command_skill
-                    traits
-                content
-                    content_type: "gather" (for galaxy events)
-                    crew_bonuses
-                        <crew name>: <bonus multiplier: 5 or 10>
-                gather_pools
-                    <list item>
-                        id
-                        adventures
-                            id
-                            name
-                            description
-                            demands
-                                <list item>
-                                    archetype_id
-                                    count
-                                <list item>
-                                    archetype_id
-                                    count
-                            golden_octopus: true|false  (ignore true; represents the SR build item count/recipe)
-                    <list item>
-                    <list item>
-    item_archetype_cache
-        archetypes
-            <list item>
-                id
-                symbol
-                type
-                name
-                rarity
-                recipe
-                    demands
-                        <list item>
-                            archetype_id
-                            count
-                        <list item>
-                        ...
-                    validity_hash
-                item_sources
-                    <list item>
-                        challenge_id
-                        challenge_skill
-                        challenge_difficulty
-                        type: 0 (away team) or 2 (space battle)
+                    featured_crew
                         id
                         name
-                        energy_quotient
-                        chance_grade (1-5? number of pips displayed?)
-                        place
-                        mission
-                        mastery
-                    <list item>
-                    ...
-                    <list item> (faction)
-                        type: 1
-                        id
-                        name: <faction name> Transmission
-                        energy_quotient
-                        chance_grade
-                bonuses (optional?)
-                    <number> (not sure what these are)
-                    <number>
-                    ...
+                        full_name
+                        rarity
+                        skills
+                            science_skill
+                                core
+                                range_min
+                                range_max
+                            diplomacy_skill
+                            command_skill
+                        traits
+                    content
+                        content_type: "gather" (for galaxy events)
+                        crew_bonuses
+                            <crew name>: <bonus multiplier: 5 or 10>
+                        gather_pools
+                            <list item>     <-- only one item in the list for phase 1, but in phase 2 there is one for
+                                                each of faction to build in.
+                                id
+                                adventures
+                                    <list item>
+                                        id
+                                        name
+                                        description
+                                        demands
+                                            <list item>
+                                                archetype_id
+                                                count
+                                            <list item>
+                                                archetype_id
+                                                count
+                                        golden_octopus: true|false  (ignore true; represents the SR build item count/recipe)
+                                    <list item>
+                                    ...
+                            <list item>
+                            ...
     '''
+
+    def __init__(self, game_data_player, debug=False):
+        self.__raw_data = game_data_player['character']['events']
+        if len(self.__raw_data) == 0:
+            print('No event data found')
+            return
+
+        if len(self.__raw_data) > 1:
+            print(f'WARNING: Expected only 0 or 1 events, found {len(self.__raw_data)}; ignoring all but the first')
+
+        self.__raw_data = self.__raw_data[0]
+        print(f'Parsing event "{self.__raw_data["name"]}"...')
+        self.galaxy_event = GalaxyEvent()
+        self.galaxy_event.id = self.__raw_data['id']
+        self.galaxy_event.name = self.__raw_data['name']
+        for f_crew in self.__raw_data['featured_crew']:
+            self.galaxy_event.featured_crew.append(f_crew['id'])
+            if debug:
+                print(f'Featured crew: {f_crew["id"]} {f_crew["full_name"]}')
+        self.galaxy_event.crew_bonuses = self.__raw_data['content']['crew_bonuses']
+        if debug:
+            for crew_name,bonus in self.galaxy_event.crew_bonuses.items():
+                print(f'Crew bonuses: {crew_name}: {bonus}')
+
+        for gather_pool_data in self.__raw_data['content']['gather_pools']:
+            gp = GatherPool()
+            gp.id = gather_pool_data['id']
+            gp.goal_index = gather_pool_data['goal_index']
+            if debug:
+                print(f'GatherPool: index {gp.goal_index}, id {gp.id}')
+            for adventure_data in gather_pool_data['adventures']:
+                adv = Adventure()
+                for k in adventure_data:
+                    if k == 'demands':
+                        # demands is a list of dicts with keys archetype_id and count
+                        for demand_data in adventure_data[k]:
+                            adv.demands[demand_data['archetype_id']] = demand_data['count']
+                    else:
+                        adv.__setattr__(k, adventure_data[k])
+                gp.adventures[adv.id] = adv
+                if debug:
+                    print(f'\tAdventure: id {adv.id}, {len(adv.demands)} demands, name "{adv.name}"' +
+                          (', golden octopus!' if adv.golden_octopus else ''))
+                    for item_id, count in adv.demands.items():
+                        event_item = ItemsData.get_item_by_archetype_id_static(item_id)
+                        print(f'\t\tDemand: {count} of {event_item}')
+                        recipe_string = event_item.get_recipe_string(tab_count=3)
+                        if recipe_string is not None:
+                            print(event_item.get_recipe_string(tab_count=3))
+            self.galaxy_event.gather_pools.append(gp)
 
 
 class CrewMember:
@@ -751,6 +820,25 @@ class GameData:
         self.crew_data = CrewData(game_data[self.__PLAYER_KEY])
         self.factions_data = FactionsData(game_data[self.__PLAYER_KEY])
         self.items_data = ItemsData(game_data[self.__ITEM_CACHE_KEY][self.__ARCHETYPES_KEY])
+        self.events_data = GalaxyEventData(game_data[self.__PLAYER_KEY], True)
+
+
+def authenticate(force_reauthentication=False):
+    if force_reauthentication:
+        authtoken = None
+    else:
+        authtoken = read_auth_token_from_file()
+
+    if authtoken is None:
+        username, password = read_creds_from_file()
+        if username is None or password is None:
+            return None
+        authtoken = login(username, password)
+        if authtoken is None:
+            return None
+        write_auth_token_to_file(authtoken)
+
+    return authtoken
 
 
 def load_game_data(max_days_old=7):
@@ -764,17 +852,18 @@ def load_game_data(max_days_old=7):
         game_data_json = read_game_data_from_file()
 
     if game_data_json is None:
-        authtoken = read_auth_token_from_file()
-        if authtoken is None:
-            username, password = read_creds_from_file()
-            if username is None or password is None:
-                return None
-            authtoken = login(username, password)
-            if authtoken is None:
-                return None
-            write_auth_token_to_file(authtoken)
+        authtoken = authenticate()
 
-        game_data_json = get_game_data(authtoken)
+        try:
+            game_data_json = get_game_data(authtoken)
+        except requests.exceptions.HTTPError as err:
+            if err.args[0].startswith('401 Client Error: Unauthorized for url:'):
+                # the authtoken expired, try to authenticate again and get a new one
+                print('Authentication token expired; re-authenticating')
+                authtoken = authenticate(force_reauthentication=True)
+                game_data_json = get_game_data(authtoken)
+            else:
+                raise
         if game_data_json is not None:
             write_game_data_to_file(game_data_json)
 
@@ -782,4 +871,4 @@ def load_game_data(max_days_old=7):
 
 
 if __name__ == "__main__":
-    data = load_game_data(max_days_old=7)
+    data = load_game_data(max_days_old=0)
