@@ -517,8 +517,7 @@ class ItemsData:
                             --> 1 string of 1 skill, if only one skill for the building bonus
                             --> 1 string of 2 skills, if one skill AND another skill for the building bonus
                             --> 2 strings of 2 skills (1 each), if one skill OR another skill for the building bonus
-
-                        uses
+                        trait_bouses
                             <trait>: 0.05 (5% bonus)
                             <trait>: 0.05
                 item_sources
