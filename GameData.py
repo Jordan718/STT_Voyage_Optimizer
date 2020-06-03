@@ -431,6 +431,11 @@ class Item:
         self.sources = None
         self.bonuses = None
 
+        # Skills and trait bonuses are for galaxy event items
+        self.jackpot_skills = None
+        self.jackpot_skills_AND = None
+        self.jackpot_trait_bonuses = None
+
     def __str__(self):
         return str(f'{self.rarity}* {self.name}')
 
@@ -464,7 +469,27 @@ class Item:
             item = ItemsData.get_item_by_archetype_id_static(item_id)
             demand_strings.append(f'{tabs}{count} of {item}')
 
-        return f'{tabs}Recipe of {len(demand_strings)} demands:\n\t' + f'\n\t'.join(demand_strings)
+        if self.jackpot_skills is not None:
+            if self.jackpot_skills_AND is None:
+                assert len(self.jackpot_skills) == 1, self.jackpot_skills
+                jackpot_skill_string = f'{tabs}Bonus skills: {self.jackpot_skills[0]}\n'
+            elif self.jackpot_skills_AND:
+                assert len(self.jackpot_skills) == 2, self.jackpot_skills
+                jackpot_skill_string = f'{tabs}Bonus skills: {self.jackpot_skills[0]} AND {self.jackpot_skills[1]}\n'
+            else:
+                assert len(self.jackpot_skills) == 2, self.jackpot_skills
+                jackpot_skill_string = f'{tabs}Bonus skills: {self.jackpot_skills[0]} OR {self.jackpot_skills[1]}\n'
+        else:
+            jackpot_skill_string = ''
+
+        if self.jackpot_trait_bonuses is not None:
+            assert len(self.jackpot_trait_bonuses) == 2, self.jackpot_trait_bonuses
+            jackpot_trait_bonuses_string = f'{tabs}Bonus traits: {", ".join(self.jackpot_trait_bonuses)}\n'
+        else:
+            jackpot_trait_bonuses_string = ''
+
+        return jackpot_skill_string + jackpot_trait_bonuses_string + \
+               f'{tabs}Recipe of {len(demand_strings)} demands:\n\t' + f'\n\t'.join(demand_strings)
 
 
 class ItemsData:
@@ -486,6 +511,16 @@ class ItemsData:
                         <list item>
                         ...
                     validity_hash
+                    jackpot             <-- this section for galaxy event items
+                        skills
+                            <list item>
+                            --> 1 string of 1 skill, if only one skill for the building bonus
+                            --> 1 string of 2 skills, if one skill AND another skill for the building bonus
+                            --> 2 strings of 2 skills (1 each), if one skill OR another skill for the building bonus
+
+                        uses
+                            <trait>: 0.05 (5% bonus)
+                            <trait>: 0.05
                 item_sources
                     <list item>
                         challenge_id            <-- ignore; refers to away team mission crit nodes
@@ -531,6 +566,9 @@ class ItemsData:
     __DISPUTE_KEY = 'dispute'
     __MASTERY_KEY = 'mastery'
     __BONUSES_KEY = 'bonuses'
+    __JACKPOT_KEY = 'jackpot'
+    __JACKPOT_SKILLS_KEY = 'skills'
+    __JACKPOT_TRAIT_BONUSES_KEY = 'trait_bonuses'
 
     __STATIC_REFERENCE_TO_DATA = None
 
@@ -552,6 +590,35 @@ class ItemsData:
                 item.recipe = {}
                 for demand in item_data[self.__RECIPE_KEY][self.__DEMANDS_KEY]:
                     item.recipe[demand[self.__ARCHETYPE_ID_KEY]] = demand[self.__COUNT_KEY]
+                if self.__JACKPOT_KEY in item_data[self.__RECIPE_KEY]:
+                    jackpot = item_data[self.__RECIPE_KEY][self.__JACKPOT_KEY]
+                    assert self.__JACKPOT_SKILLS_KEY in jackpot
+                    assert self.__JACKPOT_TRAIT_BONUSES_KEY in jackpot
+
+                    item.jackpot_skills = []
+                    jackpot_skills = jackpot[self.__JACKPOT_SKILLS_KEY]
+                    if len(jackpot_skills) == 1:
+                        # Either one skill, or one skill AND another skill
+                        jackpot_skills = jackpot_skills[0]
+                        if jackpot_skills.find(',') > 0:
+                            # one skill AND another skill
+                            item.jackpot_skills.extend([js.split('_')[0] for js in jackpot_skills.split(',')])
+                            item.jackpot_skills_AND = True
+                        else:
+                            # one skill only
+                            item.jackpot_skills.append(jackpot_skills.split('_')[0])
+                    else:
+                        # one skill OR another skill
+                        assert len(jackpot_skills) == 2, jackpot_skills
+                        item.jackpot_skills.extend([js.split('_')[0] for js in jackpot_skills])
+                        item.jackpot_skills_AND = False
+
+                    jackpot_trait_bonuses = jackpot[self.__JACKPOT_TRAIT_BONUSES_KEY]
+                    assert len(jackpot_trait_bonuses) == 2, jackpot_trait_bonuses
+                    item.jackpot_trait_bonuses = []
+                    for jtb, bonus in jackpot_trait_bonuses.items():
+                        assert bonus == 0.05, jackpot_trait_bonuses
+                        item.jackpot_trait_bonuses.append(jtb)
 
             if len(item_data[self.__ITEM_SOURCES_KEY]) > 0:
                 item.sources = []
@@ -661,6 +728,29 @@ class GalaxyEventData:
                                     ...
                             <list item>
                             ...
+    item_archetype_cache
+        archetypes
+            <list item>
+                id
+                type: 2
+                name
+                rarity: 0
+                recipe
+                    demands
+                        <list item>
+                            archetype_id
+                            count
+                        <list item>
+                        ...
+                    jackpot
+                        skills
+                            <list item>
+                            --> 1 string of 1 skill, if only one skill for the building bonus
+                            --> 1 string of 2 skills, if one skill AND another skill for the building bonus
+                            --> 2 strings of 2 skills (1 each), if one skill OR another skill for the building bonus
+                        trait_bonuses
+                            <trait>: 0.05 (5% bonus)
+                            <trait>: 0.05
     '''
 
     def __init__(self, game_data_player, debug=False):
@@ -871,4 +961,4 @@ def load_game_data(max_days_old=7):
 
 
 if __name__ == "__main__":
-    data = load_game_data(max_days_old=0)
+    data = load_game_data(max_days_old=7)
