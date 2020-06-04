@@ -150,6 +150,8 @@ class StaticGameData:
 
     ITEM_SOURCE_TYPES = __ItemSourceTypes()
 
+    SKILL_TO_SHORT_SKILL = { 'command': 'CMD', 'diplomacy': 'DIP', 'security': 'SEC', 'science': 'SCI',
+                             'engineering': 'ENG', 'medicine': 'MED' }
 
     # this data isn't in the JSON
 #    MISSIONS_PER_EPISODE = {'E1': 14, 'E2': 19, 'E3': 5, 'E4': 14, 'E5': 18, 'E6': 4, 'E7': 13, 'E8': 14, 'E9': 4,
@@ -491,6 +493,29 @@ class Item:
         return jackpot_skill_string + jackpot_trait_bonuses_string + \
                f'{tabs}Recipe of {len(demand_strings)} demands:\n\t' + f'\n\t'.join(demand_strings)
 
+    def get_galaxy_item_wiki_text(self):
+        assert self.jackpot_skills is not None, f'{self.id}: {self.name}'
+        assert self.jackpot_trait_bonuses is not None, f'{self.id}: {self.name}'
+        assert len(self.jackpot_trait_bonuses) == 2, self.jackpot_trait_bonuses
+
+        if self.jackpot_skills_AND is None:
+            assert len(self.jackpot_skills) == 1, self.jackpot_skills
+            jackpot_skill_string = f'Skill|{StaticGameData.SKILL_TO_SHORT_SKILL[self.jackpot_skills[0]]}'
+        elif self.jackpot_skills_AND:
+            assert len(self.jackpot_skills) == 2, self.jackpot_skills
+            jackpot_skill_string = f'SkillMultiple|{StaticGameData.SKILL_TO_SHORT_SKILL[self.jackpot_skills[0]]}' \
+                                   f'|and|{StaticGameData.SKILL_TO_SHORT_SKILL[self.jackpot_skills[1]]}'
+        else:
+            assert len(self.jackpot_skills) == 2, self.jackpot_skills
+            jackpot_skill_string = f'SkillMultiple|{StaticGameData.SKILL_TO_SHORT_SKILL[self.jackpot_skills[0]]}' \
+                                   f'|or|{StaticGameData.SKILL_TO_SHORT_SKILL[self.jackpot_skills[1]]}'
+
+        jackpot_trait_bonuses_string = f'trait1 = {self.jackpot_trait_bonuses[0].title()}| ' \
+                                       f'trait2 = {self.jackpot_trait_bonuses[1].title()}'
+
+        return f'| {{{{Galaxy/Recipe | skill = {{{{{jackpot_skill_string}}}}} | {jackpot_trait_bonuses_string}| ' \
+               f'recipename = {self.name}}}}}'
+
 
 class ItemsData:
     '''
@@ -654,11 +679,20 @@ class GalaxyEvent:
     def __init__(self):
         self.id = -1
         self.name = None
+        self.description = None
         self.featured_crew = []
         # Content type should always be "gather" for galaxy events
         self.content_type = None
         self.crew_bonuses = None
         self.gather_pools = []
+
+    def get_wiki_text(self):
+        s = ''
+        for gp in self.gather_pools:
+            for adv in gp.adventures.values():
+                if not adv.is_golden_octopus:
+                    s += adv.get_wiki_text() + '\n\n'
+        return s
 
 
 class GatherPool:
@@ -676,7 +710,25 @@ class Adventure:
         self.name = None
         self.description = None
         self.demands = {}
-        self.golden_octopus = False
+        self.is_golden_octopus = False
+
+    def get_wiki_text(self):
+        '''
+        Wiki text format:
+
+        {{Galaxy/Mission
+        | title = Breadcrumbs
+        | text = Trace the Pakleds' journey to the asteroid.
+        | {{Galaxy/Recipe | skill = {{SkillMultiple|DIP|or|SEC}} | trait1 = Maverick| trait2 = Costumed| recipename = Metallurgy}}
+        | {{Galaxy/Recipe | skill = {{Skill|DIP}} | trait1 = Diplomat| trait2 = Maverick | recipename = Passenger Manifest}}
+        | {{Galaxy/Recipe | skill = {{Skill|SCI}} | trait1 = Thief | trait2 = Prodigy | recipename = Rations}}
+        }}
+        '''
+
+        s = f'{{{{Galaxy/Mission\n| title = {self.name}\n| text = {self.description}\n'
+        for item_id in self.demands.keys():
+            s += ItemsData.get_item_by_archetype_id_static(item_id).get_galaxy_item_wiki_text() + '\n'
+        return s + '}}'
 
 
 class GalaxyEventData:
@@ -754,6 +806,8 @@ class GalaxyEventData:
 
     def __init__(self, game_data_player, debug=False):
         self.__raw_data = game_data_player['character']['events']
+        self.galaxy_event = None
+
         if len(self.__raw_data) == 0:
             print('No event data found')
             return
@@ -762,10 +816,11 @@ class GalaxyEventData:
             print(f'WARNING: Expected only 0 or 1 events, found {len(self.__raw_data)}; ignoring all but the first')
 
         self.__raw_data = self.__raw_data[0]
-        print(f'Parsing event "{self.__raw_data["name"]}"...')
+        print(f'Parsing event "{self.__raw_data["name"]}"... ', end='')
         self.galaxy_event = GalaxyEvent()
         self.galaxy_event.id = self.__raw_data['id']
         self.galaxy_event.name = self.__raw_data['name']
+        self.galaxy_event.description = self.__raw_data['description']
         for f_crew in self.__raw_data['featured_crew']:
             self.galaxy_event.featured_crew.append(f_crew['id'])
             if debug:
@@ -788,12 +843,14 @@ class GalaxyEventData:
                         # demands is a list of dicts with keys archetype_id and count
                         for demand_data in adventure_data[k]:
                             adv.demands[demand_data['archetype_id']] = demand_data['count']
+                    elif k == 'golden_octopus':
+                        adv.is_golden_octopus = adventure_data[k]
                     else:
                         adv.__setattr__(k, adventure_data[k])
                 gp.adventures[adv.id] = adv
                 if debug:
                     print(f'\tAdventure: id {adv.id}, {len(adv.demands)} demands, name "{adv.name}"' +
-                          (', golden octopus!' if adv.golden_octopus else ''))
+                          (', golden octopus!' if adv.is_golden_octopus else ''))
                     for item_id, count in adv.demands.items():
                         event_item = ItemsData.get_item_by_archetype_id_static(item_id)
                         print(f'\t\tDemand: {count} of {event_item}')
@@ -801,6 +858,9 @@ class GalaxyEventData:
                         if recipe_string is not None:
                             print(event_item.get_recipe_string(tab_count=3))
             self.galaxy_event.gather_pools.append(gp)
+
+        print(f'got {len(self.galaxy_event.gather_pools)} gather pools of '
+              f'{sum([len(gp.adventures) for gp in self.galaxy_event.gather_pools])} total adventures')
 
 
 class CrewMember:
@@ -909,7 +969,7 @@ class GameData:
         self.crew_data = CrewData(game_data[self.__PLAYER_KEY])
         self.factions_data = FactionsData(game_data[self.__PLAYER_KEY])
         self.items_data = ItemsData(game_data[self.__ITEM_CACHE_KEY][self.__ARCHETYPES_KEY])
-        self.events_data = GalaxyEventData(game_data[self.__PLAYER_KEY], True)
+        self.galaxy_event_data = GalaxyEventData(game_data[self.__PLAYER_KEY], False)
 
 
 def authenticate(force_reauthentication=False):
@@ -961,3 +1021,6 @@ def load_game_data(max_days_old=7):
 
 if __name__ == "__main__":
     data = load_game_data(max_days_old=7)
+
+    if data.galaxy_event_data.galaxy_event is not None:
+        print(data.galaxy_event_data.galaxy_event.get_wiki_text())
