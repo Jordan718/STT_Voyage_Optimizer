@@ -511,7 +511,7 @@ class Item:
                                    f'|or|{StaticGameData.SKILL_TO_SHORT_SKILL[self.jackpot_skills[1]]}'
 
         jackpot_trait_bonuses_string = f'trait1 = {self.jackpot_trait_bonuses[0].title()}| ' \
-                                       f'trait2 = {self.jackpot_trait_bonuses[1].title()}'
+                                       f'trait2 = {self.jackpot_trait_bonuses[1].title()}'.replace('_', ' ')
 
         return f'| {{{{Galaxy/Recipe | skill = {{{{{jackpot_skill_string}}}}} | {jackpot_trait_bonuses_string}| ' \
                f'recipename = {self.name}}}}}'
@@ -755,7 +755,7 @@ class GalaxyEventData:
                             command_skill
                         traits
                     content
-                        content_type: "gather" (for galaxy events)
+                        content_type: "gather" (for galaxy events), "shuttles" (for faction events)
                         crew_bonuses
                             <crew name>: <bonus multiplier: 5 or 10>
                         gather_pools
@@ -805,11 +805,15 @@ class GalaxyEventData:
     '''
 
     def __init__(self, game_data_player, debug=False):
-        self.__raw_data = game_data_player['character']['events']
         self.galaxy_event = None
+        self.__raw_data = game_data_player['character']['events']
 
         if len(self.__raw_data) == 0:
             print('No event data found')
+            return
+
+        if self.__raw_data[0]['content']['content_type'] != 'gather':
+            # Not a galaxy event
             return
 
         if len(self.__raw_data) > 1:
