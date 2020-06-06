@@ -153,6 +153,13 @@ class StaticGameData:
     SKILL_TO_SHORT_SKILL = { 'command': 'CMD', 'diplomacy': 'DIP', 'security': 'SEC', 'science': 'SCI',
                              'engineering': 'ENG', 'medicine': 'MED' }
 
+    GALAXY_EVENT_RECIPE_NAME_WIKI_CORRECTIONS = {
+        4937: 'Listening Device 2',
+        'Debate Strategy': 'Debate Strategy 2',
+        'Raw Materials': 'Raw Materials 2',
+        'Ethical Subroutine': 'Ethical Subroutine 2'
+    }
+
     # this data isn't in the JSON
 #    MISSIONS_PER_EPISODE = {'E1': 14, 'E2': 19, 'E3': 5, 'E4': 14, 'E5': 18, 'E6': 4, 'E7': 13, 'E8': 14, 'E9': 4,
 #                            'E10': 7, 'DE': 8, 'CT': 8, 'KE': 5, 'IN': 8, '??': 100000}
@@ -513,8 +520,19 @@ class Item:
         jackpot_trait_bonuses_string = f'trait1 = {self.jackpot_trait_bonuses[0].title()}| ' \
                                        f'trait2 = {self.jackpot_trait_bonuses[1].title()}'.replace('_', ' ')
 
+        if self.id in StaticGameData.GALAXY_EVENT_RECIPE_NAME_WIKI_CORRECTIONS:
+            name = StaticGameData.GALAXY_EVENT_RECIPE_NAME_WIKI_CORRECTIONS[self.id]
+        elif self.name in StaticGameData.GALAXY_EVENT_RECIPE_NAME_WIKI_CORRECTIONS:
+            name = StaticGameData.GALAXY_EVENT_RECIPE_NAME_WIKI_CORRECTIONS[self.name]
+            print('--------')
+            print('WARNING: Verify and update StaticGameData.GALAXY_EVENT_RECIPE_NAME_WIKI_CORRECTIONS with ')
+            print(f'{self.id} for {name}')
+            print('--------')
+        else:
+            name = self.name
+
         return f'| {{{{Galaxy/Recipe | skill = {{{{{jackpot_skill_string}}}}} | {jackpot_trait_bonuses_string}| ' \
-               f'recipename = {self.name}}}}}'
+               f'recipename = {name}}}}}'
 
 
 class ItemsData:
