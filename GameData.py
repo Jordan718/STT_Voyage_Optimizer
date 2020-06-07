@@ -382,12 +382,18 @@ class FactionsData:
             self.__shuttle_token_id_to_faction_id[fac.shuttle_token_id] = fac.id
 
     def get_transmission_name_for_shuttle_token_id(self, shuttle_token_id):
+        print(sorted(self.factions.keys()))
         return self.factions[self.__shuttle_token_id_to_faction_id[shuttle_token_id]].name + ' Transmission'
 
     @classmethod
     def get_transmission_name_for_shuttle_token_id_static(cls, shuttle_token_id):
         assert cls.__STATIC_REFERENCE_TO_DATA is not None
         return cls.__STATIC_REFERENCE_TO_DATA.get_transmission_name_for_shuttle_token_id(shuttle_token_id)
+
+    @classmethod
+    def get_faction_name_for_id_static(cls, faction_id):
+        assert cls.__STATIC_REFERENCE_TO_DATA is not None
+        return cls.__STATIC_REFERENCE_TO_DATA.factions[faction_id].name
 
 
 class ItemSource:
@@ -692,43 +698,216 @@ class ItemsData:
         return cls.__STATIC_REFERENCE_TO_DATA.items[archetype_id]
 
 
-class GalaxyEvent:
-
-    def __init__(self):
-        self.id = -1
-        self.name = None
-        self.description = None
-        self.featured_crew = []
-        # Content type should always be "gather" for galaxy events
-        self.content_type = None
+class GameEvent:
+    def __init__(self, event_data_json, *, debug=False):
+        self.__raw_data = event_data_json
         self.crew_bonuses = None
-        self.gather_pools = []
 
-    def get_wiki_text(self):
-        s = ''
-        for gp in self.gather_pools:
-            for adv in gp.adventures.values():
-                if not adv.is_golden_octopus:
-                    s += adv.get_wiki_text() + '\n\n'
+        print(f'Parsing event "{event_data_json["name"]}"... ')   #, end='')
+        self.id = event_data_json['id']
+        self.name = event_data_json['name']
+        self.description = event_data_json['description']
+        # Content type is "gather" for galaxy events and "shuttles" for faction events
+        self.content_type = event_data_json['content']['content_type']
+
+        self.featured_crew = []
+        for f_crew in event_data_json['featured_crew']:
+            self.featured_crew.append(f_crew['id'])
+            if debug:
+                print(f'Featured crew: {f_crew["id"]} {f_crew["full_name"]}')
+
+    def print_event_crew(self):
+        if len(self.featured_crew) == 0:
+            print('No featured event crew found')
+        else:
+            for f_crew in self.featured_crew:
+                print(f'Featured crew: {f_crew["id"]} {f_crew["full_name"]}')
+
+        if len(self.crew_bonuses) == 0:
+            print('No bonus crew found')
+        else:
+            for crew_name, bonus in self.crew_bonuses.items():
+                print(f'Bonus crew: {crew_name}: {bonus}')
+
+
+class FactionShuttleSeat:
+
+    def __init__(self, seat_data):
+        self.level = seat_data['level']
+        self.required_trait = seat_data['required_trait']
+        self.trait_bonuses = seat_data['trait_bonuses']
+
+        # 1 string of 1 skill, if only one skill for the building bonus
+        # 1 string of 2 skills, if one skill AND another skill for the building bonus
+        # 2 strings of 2 skills (1 each), if one skill OR another skill for the building bonus
+        if len(seat_data['skills']) == 2:
+            self.skills = [skill[:-6] for skill in seat_data['skills']]
+            self.skills_AND = False
+        else:
+            self.skills = [skill[:-6] for skill in seat_data['skills'][0].split(',')]
+            self.skills_AND = len(self.skills) == 2
+
+    def __str__(self):
+        if len(self.skills) == 1:
+            s = self.skills[0]
+        elif self.skills_AND:
+            s = f'{self.skills[0]} AND {self.skills[1]}'
+        else:
+            s = f'{self.skills[0]} OR {self.skills[1]}'
+        if self.trait_bonuses is not None and len(self.trait_bonuses) > 0:
+            s += '; bonus traits: ' + ', '.join(self.trait_bonuses)
         return s
 
 
-class GatherPool:
+class FactionShuttle:
 
-    def __init__(self):
-        self.id = -1
-        self.goal_index = -1
-        self.adventures = {}
+    def __init__(self, shuttle_data, *, debug=False):
+        assert len(shuttle_data['shuttles']) == 1, len(shuttle_data['shuttles'])
+
+        self.id = shuttle_data['id']
+        self.name = shuttle_data['name']
+        self.faction_id = shuttle_data['faction_id']
+        self.challenge_rating = shuttle_data['challenge_rating']
+        self.completes_in_seconds = shuttle_data['completes_in_seconds']
+        self.description = shuttle_data['shuttles'][0]['description']
+        self.state = shuttle_data['shuttles'][0]['state']
+        self.expires_in = shuttle_data['shuttles'][0]['expires_in']
+        self.is_rental = shuttle_data['shuttles'][0]['is_rental']
+        self.seats = [FactionShuttleSeat(seat) for seat in shuttle_data['shuttles'][0]['slots']]
+
+        if debug:
+            print(f'Event shuttle: {FactionsData.get_faction_name_for_id_static(self.faction_id)}, '
+                  f'{self.name}, {self.state}')
+            for seat in self.seats:
+                print(f'\t{seat}')
+
+    def __str__(self):
+        return self.name
+
+
+class FactionEvent(GameEvent):
+    '''
+    JSON structure (of interest):
+    action
+    player
+        character
+            events
+                <list item>             <-- presumably only one element in the list
+                    id
+                    name
+                    description
+                    featured_crew
+                        <list item>
+                            id
+                            name
+                            full_name
+                            rarity
+                            skills
+                                science_skill
+                                    core
+                                    range_min
+                                    range_max
+                                diplomacy_skill
+                                command_skill
+                            traits
+                        <list item>
+                        ...
+                    content
+                        content_type: "gather" (for galaxy events), "shuttles" (for faction events)
+                        shuttles
+                            <list item>         <-- one per faction in the event
+                                crew_bonuses    <-- dict
+                                    <crew name>: <bonus multiplier: 2 or 3>
+                            <list item>
+                            ...
+            shuttle_adventures
+                <list item>             <-- one per (open?) shuttle mission
+                    id
+                    name
+                    challenge_rating: 1500.0    <-- 1500.0 for 4000 point shuttles
+                    completes_in_seconds: 10800     <-- 10800 for 3 hour shuttles
+                    shuttles
+                        <list item>             <-- one list item in shuttles
+                            id
+                            name
+                            description
+                            state: 0|1|?            <-- 0 is not started, 1 is in progress (I assume)
+                            expires_in: 38258.667170789 (seconds?)
+                            faction_id
+                            is_rental: false|true
+                            slots
+                                <list item>
+                                    level: null
+                                    required_trait: null
+                                    skills:
+                                        <list item>     <-- one or two skills
+                                            skill       <-- e.g., diplomacy_skill
+                                    trait_bonuses       <-- dict; no entries?
+    '''
+
+    def __init__(self, event_data_json, raw_data_shuttles, *, debug=False):
+        super().__init__(event_data_json, debug=debug)
+        assert self.content_type == 'shuttles', self.content_type
+
+        self.crew_bonuses = event_data_json['content']['shuttles'][0]['crew_bonuses']
+        if debug:
+            if len(self.crew_bonuses) == 0:
+                print('No bonus crew found')
+            else:
+                for crew_name, bonus in self.crew_bonuses.items():
+                    print(f'Bonus crew: {crew_name}: {bonus}')
+
+        self.__raw_data_shuttles = raw_data_shuttles
+        self.shuttles = [FactionShuttle(shuttle_data, debug=debug) for shuttle_data in raw_data_shuttles]
+
+        print(f'Got {len(self.shuttles)} faction event shuttle missions')
+
+
+class EventData:
+
+    def __init__(self, game_data_player, debug=False):
+        raw_data = game_data_player['character']['events']
+        self.event = None
+
+        if len(raw_data) == 0:
+            print('No event data found')
+            return
+
+        if len(raw_data) > 1:
+            print(f'WARNING: Expected 0 or 1 events, found {len(raw_data)}; ignoring all but the first')
+        raw_data = raw_data[0]
+
+        if raw_data['content']['content_type'] == 'shuttles':
+            self.event = FactionEvent(raw_data, game_data_player['character']['shuttle_adventures'], debug=debug)
+        elif raw_data['content']['content_type'] == 'supply':
+            self.event = GalaxyEvent(raw_data, debug=debug)
+        else:
+            print(f"WARNING: Found unexpected event of expected type: {raw_data['content']['content_type']}")
+            return
 
 
 class Adventure:
 
-    def __init__(self):
-        self.id = -1
-        self.name = None
-        self.description = None
+    def __init__(self, adventure_data, *, debug=False):
+        self.id = adventure_data['id']
+        self.name = adventure_data['name']
+        self.description = adventure_data['description']
+        self.is_golden_octopus = adventure_data['golden_octopus']
+
+        # demands is a list of dicts with keys archetype_id and count
         self.demands = {}
-        self.is_golden_octopus = False
+        for demand_data in adventure_data['demands']:
+            self.demands[demand_data['archetype_id']] = demand_data['count']
+
+        if debug:
+            print(f'\tAdventure: id {self.id}, {len(self.demands)} demands, name "{self.name}"' +
+                  (', golden octopus!' if self.is_golden_octopus else ''))
+            for item_id, count in self.demands.items():
+                event_item = ItemsData.get_item_by_archetype_id_static(item_id)
+                print(f'\t\tDemand: {count} of {event_item}')
+                recipe_string = event_item.get_recipe_string(tab_count=3)
+                if recipe_string is not None:
+                    print(event_item.get_recipe_string(tab_count=3))
 
     def get_wiki_text(self):
         '''
@@ -749,7 +928,21 @@ class Adventure:
         return s + '}}'
 
 
-class GalaxyEventData:
+class GatherPool:
+
+    def __init__(self, gather_pool_data, *, debug=False):
+        self.id = gather_pool_data['id']
+        self.goal_index = gather_pool_data['goal_index']
+        if debug:
+            print(f'GatherPool: index {self.goal_index}, id {self.id}')
+
+        self.adventures = {}
+        for adventure_data in gather_pool_data['adventures']:
+            adv = Adventure(adventure_data, debug=debug)
+            self.adventures[adv.id] = adv
+
+
+class GalaxyEvent(GameEvent):
     '''
     JSON structure (of interest):
     action
@@ -792,7 +985,7 @@ class GalaxyEventData:
                                             <list item>
                                                 archetype_id
                                                 count
-                                        golden_octopus: true|false  (ignore true; represents the SR build item count/recipe)
+                                        golden_octopus: true|false  (true represents the SR build item count/recipe)
                                     <list item>
                                     ...
                             <list item>
@@ -822,67 +1015,21 @@ class GalaxyEventData:
                             <trait>: 0.05
     '''
 
-    def __init__(self, game_data_player, debug=False):
-        self.galaxy_event = None
-        self.__raw_data = game_data_player['character']['events']
-
-        if len(self.__raw_data) == 0:
-            print('No event data found')
-            return
-
-        if self.__raw_data[0]['content']['content_type'] != 'gather':
-            # Not a galaxy event
-            return
-
-        if len(self.__raw_data) > 1:
-            print(f'WARNING: Expected only 0 or 1 events, found {len(self.__raw_data)}; ignoring all but the first')
-
-        self.__raw_data = self.__raw_data[0]
-        print(f'Parsing event "{self.__raw_data["name"]}"... ', end='')
-        self.galaxy_event = GalaxyEvent()
-        self.galaxy_event.id = self.__raw_data['id']
-        self.galaxy_event.name = self.__raw_data['name']
-        self.galaxy_event.description = self.__raw_data['description']
-        for f_crew in self.__raw_data['featured_crew']:
-            self.galaxy_event.featured_crew.append(f_crew['id'])
-            if debug:
-                print(f'Featured crew: {f_crew["id"]} {f_crew["full_name"]}')
-        self.galaxy_event.crew_bonuses = self.__raw_data['content']['crew_bonuses']
-        if debug:
-            for crew_name,bonus in self.galaxy_event.crew_bonuses.items():
-                print(f'Crew bonuses: {crew_name}: {bonus}')
-
-        for gather_pool_data in self.__raw_data['content']['gather_pools']:
-            gp = GatherPool()
-            gp.id = gather_pool_data['id']
-            gp.goal_index = gather_pool_data['goal_index']
-            if debug:
-                print(f'GatherPool: index {gp.goal_index}, id {gp.id}')
-            for adventure_data in gather_pool_data['adventures']:
-                adv = Adventure()
-                for k in adventure_data:
-                    if k == 'demands':
-                        # demands is a list of dicts with keys archetype_id and count
-                        for demand_data in adventure_data[k]:
-                            adv.demands[demand_data['archetype_id']] = demand_data['count']
-                    elif k == 'golden_octopus':
-                        adv.is_golden_octopus = adventure_data[k]
-                    else:
-                        adv.__setattr__(k, adventure_data[k])
-                gp.adventures[adv.id] = adv
-                if debug:
-                    print(f'\tAdventure: id {adv.id}, {len(adv.demands)} demands, name "{adv.name}"' +
-                          (', golden octopus!' if adv.is_golden_octopus else ''))
-                    for item_id, count in adv.demands.items():
-                        event_item = ItemsData.get_item_by_archetype_id_static(item_id)
-                        print(f'\t\tDemand: {count} of {event_item}')
-                        recipe_string = event_item.get_recipe_string(tab_count=3)
-                        if recipe_string is not None:
-                            print(event_item.get_recipe_string(tab_count=3))
-            self.galaxy_event.gather_pools.append(gp)
+    def __init__(self, event_data_json, *, debug=False):
+        super().__init__(event_data_json)
+        assert self.content_type == 'gather', self.content_type
+        self.gather_pools = [GatherPool(gp_data) for gp_data in self.__raw_data['content']['gather_pools']]
 
         print(f'got {len(self.galaxy_event.gather_pools)} gather pools of '
               f'{sum([len(gp.adventures) for gp in self.galaxy_event.gather_pools])} total adventures')
+
+    def get_wiki_text(self):
+        s = ''
+        for gp in self.gather_pools:
+            for adv in gp.adventures.values():
+                if not adv.is_golden_octopus:
+                    s += adv.get_wiki_text() + '\n\n'
+        return s
 
 
 class CrewMember:
@@ -981,7 +1128,7 @@ class GameData:
     __ITEM_CACHE_KEY = 'item_archetype_cache'
     __ARCHETYPES_KEY = 'archetypes'
 
-    def __init__(self, game_data):
+    def __init__(self, game_data, *, debug=False):
         assert type(game_data) is dict, type(game_data)
         assert self.__PLAYER_KEY in game_data
         assert self.__ITEM_CACHE_KEY in game_data
@@ -991,7 +1138,7 @@ class GameData:
         self.crew_data = CrewData(game_data[self.__PLAYER_KEY])
         self.factions_data = FactionsData(game_data[self.__PLAYER_KEY])
         self.items_data = ItemsData(game_data[self.__ITEM_CACHE_KEY][self.__ARCHETYPES_KEY])
-        self.galaxy_event_data = GalaxyEventData(game_data[self.__PLAYER_KEY], False)
+        self.event_data = EventData(game_data[self.__PLAYER_KEY], debug=debug)
 
 
 def authenticate(force_reauthentication=False):
@@ -1038,11 +1185,11 @@ def load_game_data(max_days_old=7):
         if game_data_json is not None:
             write_game_data_to_file(game_data_json)
 
-    return GameData(game_data_json)
+    return GameData(game_data_json, debug=False)
 
 
 if __name__ == "__main__":
-    data = load_game_data(max_days_old=7)
+    data = load_game_data(max_days_old=17)
 
-    if data.galaxy_event_data.galaxy_event is not None:
-        print(data.galaxy_event_data.galaxy_event.get_wiki_text())
+    if data.event_data.event is not None and data.event_data.event is FactionEvent:
+        print(data.event_data.event.get_wiki_text())
