@@ -336,6 +336,25 @@ class StaticGameData:
                f'{cls.__MISSION_INFO_FOR_ID[mission_id][2]}'
 
 
+class Utilities:
+
+    @staticmethod
+    def get_wiki_text_for_skills(skills, skills_AND):
+        if skills_AND is None:
+            assert len(skills) == 1, skills
+            skill_string = f'Skill|{StaticGameData.SKILL_TO_SHORT_SKILL[skills[0]]}'
+        elif skills_AND:
+            assert len(skills) == 2, skills
+            skill_string = f'SkillMultiple|{StaticGameData.SKILL_TO_SHORT_SKILL[skills[0]]}' \
+                                   f'|and|{StaticGameData.SKILL_TO_SHORT_SKILL[skills[1]]}'
+        else:
+            assert len(skills) == 2, skills
+            skill_string = f'SkillMultiple|{StaticGameData.SKILL_TO_SHORT_SKILL[skills[0]]}' \
+                                   f'|or|{StaticGameData.SKILL_TO_SHORT_SKILL[skills[1]]}'
+
+        return skill_string
+
+
 class Faction:
 
     def __init__(self):
@@ -511,18 +530,7 @@ class Item:
         assert self.jackpot_trait_bonuses is not None, f'{self.id}: {self.name}'
         assert len(self.jackpot_trait_bonuses) == 2, self.jackpot_trait_bonuses
 
-        if self.jackpot_skills_AND is None:
-            assert len(self.jackpot_skills) == 1, self.jackpot_skills
-            jackpot_skill_string = f'Skill|{StaticGameData.SKILL_TO_SHORT_SKILL[self.jackpot_skills[0]]}'
-        elif self.jackpot_skills_AND:
-            assert len(self.jackpot_skills) == 2, self.jackpot_skills
-            jackpot_skill_string = f'SkillMultiple|{StaticGameData.SKILL_TO_SHORT_SKILL[self.jackpot_skills[0]]}' \
-                                   f'|and|{StaticGameData.SKILL_TO_SHORT_SKILL[self.jackpot_skills[1]]}'
-        else:
-            assert len(self.jackpot_skills) == 2, self.jackpot_skills
-            jackpot_skill_string = f'SkillMultiple|{StaticGameData.SKILL_TO_SHORT_SKILL[self.jackpot_skills[0]]}' \
-                                   f'|or|{StaticGameData.SKILL_TO_SHORT_SKILL[self.jackpot_skills[1]]}'
-
+        jackpot_skill_string = Utilities.get_wiki_text_for_skills(self.jackpot_skills, self.jackpot_skills_AND)
         jackpot_trait_bonuses_string = f'trait1 = {self.jackpot_trait_bonuses[0].title()}| ' \
                                        f'trait2 = {self.jackpot_trait_bonuses[1].title()}'.replace('_', ' ')
 
@@ -745,7 +753,10 @@ class FactionShuttleSeat:
             self.skills_AND = False
         else:
             self.skills = [skill[:-6] for skill in seat_data['skills'][0].split(',')]
-            self.skills_AND = len(self.skills) == 2
+            if len(self.skills) == 2:
+                self.skills_AND = False
+            else:
+                self.skills_AND = None
 
     def __str__(self):
         if len(self.skills) == 1:
@@ -759,7 +770,7 @@ class FactionShuttleSeat:
         return s
 
 
-class FactionShuttle:
+class FactionShuttleMission:
 
     def __init__(self, shuttle_data, *, debug=False):
         assert len(shuttle_data['shuttles']) == 1, len(shuttle_data['shuttles'])
@@ -858,9 +869,38 @@ class FactionEvent(GameEvent):
                     print(f'Bonus crew: {crew_name}: {bonus}')
 
         self.__raw_data_shuttles = raw_data_shuttles
-        self.shuttles = [FactionShuttle(shuttle_data, debug=debug) for shuttle_data in raw_data_shuttles]
+        self.missions = [FactionShuttleMission(shuttle_data, debug=debug) for shuttle_data in raw_data_shuttles]
 
-        print(f'Got {len(self.shuttles)} faction event shuttle missions')
+        print(f'Got {len(self.missions)} faction event shuttle missions')
+
+    def get_wiki_text(self):
+        ''' Wiki format for each shuttle mission:
+        | name
+        | {{SkillMultiple|ENG|and|SCI}} || {{Skill|DIP}} || {{Skill|MED}} || {{SkillMultiple|DIP|and|SCI}} ||
+        | description
+        | style="color:lightgreen;" | SUCCESS TEXT
+        | style="color:darkorange;" | FAIL TEXT
+        |-
+        '''
+
+        missions_by_faction = {}
+        for mission in self.missions:
+            s = f'|-\n| {mission.name}\n| '
+            s += ' || '.join([Utilities.get_wiki_text_for_skills(seat.skills, seat.skills_AND) for seat in mission.seats])
+            s += ' || ' * (5 - len(mission.seats)) + '\n'
+            s += f'| {mission.description}\n'
+            s += '| style="color:lightgreen;" | SUCCESS TEXT\n| style="color:darkorange;" | FAIL TEXT'
+
+            if mission.faction_id not in missions_by_faction:
+                missions_by_faction[mission.faction_id] = {}
+            missions_by_faction[mission.faction_id][mission.name] = s
+
+        s = ''
+        for faction_id, missions in missions_by_faction.items():
+            s += f'\n-------------\n{FactionsData.get_faction_name_for_id_static(faction_id)} missions:\n'
+            s += '\n'.join([missions[mission_name] for mission_name in sorted(missions.keys())]) + '\n'
+
+        return s
 
 
 class EventData:
@@ -1191,5 +1231,5 @@ def load_game_data(max_days_old=7):
 if __name__ == "__main__":
     data = load_game_data(max_days_old=17)
 
-    if data.event_data.event is not None and data.event_data.event is FactionEvent:
+    if data.event_data.event is not None and type(data.event_data.event) in [FactionEvent, GalaxyEvent]:
         print(data.event_data.event.get_wiki_text())
