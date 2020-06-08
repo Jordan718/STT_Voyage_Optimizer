@@ -24,6 +24,8 @@ SUBFOLDER_NAME = 'Star Trek Timelines'
 AUTH_TOKEN_FILENAME = 'STT auth token.txt'
 USERPASS_FILENAME = "STT website login.txt"
 PLAYER_JSON_FILENAME = 'STT player data.json'
+FACTION_EVENT_FILENAME = 'Faction event - {}.csv'
+GALAXY_EVENT_FILENAME = 'Galaxy event - {}.csv'
 ACCESS_TOKEN = 'access_token'
 PLAYER_URL = URL_SERVER + 'player'
 AUTH_URL = URL_PLATFORM + 'oauth2/token'
@@ -342,15 +344,15 @@ class Utilities:
     def get_wiki_text_for_skills(skills, skills_AND):
         if skills_AND is None:
             assert len(skills) == 1, skills
-            skill_string = f'Skill|{StaticGameData.SKILL_TO_SHORT_SKILL[skills[0]]}'
+            skill_string = f'{{{{Skill|{StaticGameData.SKILL_TO_SHORT_SKILL[skills[0]]}}}}}'
         elif skills_AND:
             assert len(skills) == 2, skills
-            skill_string = f'SkillMultiple|{StaticGameData.SKILL_TO_SHORT_SKILL[skills[0]]}' \
-                                   f'|and|{StaticGameData.SKILL_TO_SHORT_SKILL[skills[1]]}'
+            skill_string = f'{{{{SkillMultiple|{StaticGameData.SKILL_TO_SHORT_SKILL[skills[0]]}' \
+                                   f'|and|{StaticGameData.SKILL_TO_SHORT_SKILL[skills[1]]}}}}}'
         else:
             assert len(skills) == 2, skills
-            skill_string = f'SkillMultiple|{StaticGameData.SKILL_TO_SHORT_SKILL[skills[0]]}' \
-                                   f'|or|{StaticGameData.SKILL_TO_SHORT_SKILL[skills[1]]}'
+            skill_string = f'{{{{SkillMultiple|{StaticGameData.SKILL_TO_SHORT_SKILL[skills[0]]}' \
+                                   f'|or|{StaticGameData.SKILL_TO_SHORT_SKILL[skills[1]]}}}}}'
 
         return skill_string
 
@@ -386,13 +388,13 @@ class FactionsData:
     __ATTR_OF_INTEREST = set(['id', 'name', 'reputation', 'discovered', 'completed_shuttle_adventures', 'shuttle_token_id'])
     __STATIC_REFERENCE_TO_DATA = None
 
-    def __init__(self, game_data_player):
+    def __init__(self, game_data_player, *, debug=False):
         FactionsData.__STATIC_REFERENCE_TO_DATA = self
         self.factions = {}
         self.__shuttle_token_id_to_faction_id = {}
-        self.__raw_data = game_data_player['character']['factions']
-        print(f'Parsing {len(self.__raw_data)} factions...')
-        for faction_data in self.__raw_data:
+        self._raw_data = game_data_player['character']['factions']
+        print(f'Parsing {len(self._raw_data)} factions...')
+        for faction_data in self._raw_data:
             fac = Faction()
             for k in faction_data:
                 if k in self.__ATTR_OF_INTEREST:
@@ -459,6 +461,7 @@ class Item:
         self.type = -1
         self.name = None
         self.rarity = -1
+        self.quantity = 0
         # recipe = dict of demands; archetype_id: count
         self.recipe = None
         # sources = list of missions; id, name, energy_quotient, chance_grade
@@ -492,6 +495,16 @@ class Item:
         for s in source_strings:
             print(f'\t{s}')
         return f'{tabs}{len(source_strings)} sources:\n' + f'\n{tabs}'.join(source_strings)
+
+    def get_recipe_data_for_csv(self):
+        if self.recipe is None:
+            return None
+
+        demands = []
+        for item_id, qty_needed in self.recipe.items():
+            item = ItemsData.get_item_by_archetype_id_static(item_id)
+            demands.append([item_id, str(item), item.quantity, qty_needed])
+        return demands
 
     def get_recipe_string(self, *, tab_count=0):
         if self.recipe is None:
@@ -552,6 +565,12 @@ class Item:
 class ItemsData:
     '''
     JSON structure (of interest):
+    player
+        character
+            items
+                <list item>
+                    archetype_id
+                    quantity
     item_archetype_cache
         archetypes
             <list item>
@@ -628,13 +647,13 @@ class ItemsData:
 
     __STATIC_REFERENCE_TO_DATA = None
 
-    def __init__(self, game_data_items):
+    def __init__(self, game_data_items, game_data_player, *, debug=False):
         ItemsData.__STATIC_REFERENCE_TO_DATA = self
-        self.__raw_data = game_data_items
+        self._raw_data = game_data_items
         self.items = {}
         print('Parsing {} items...'.format(len(game_data_items)))
         missing_missions = set()
-        for item_data in self.__raw_data:
+        for item_data in self._raw_data:
             item = Item()
             item.id = item_data[self.__ID_KEY]
             item.symbol = item_data[self.__SYMBOL_KEY]
@@ -697,6 +716,17 @@ class ItemsData:
 
             self.items[item.id] = item
 
+        for item_data in game_data_player['character']['items']:
+            if item_data['archetype_id'] in self.items:
+                the_item = self.items[item_data['archetype_id']]
+                the_item.quantity = item_data['quantity']
+                print(f'Set {the_item.id} {the_item} quantity to {the_item.quantity}')
+#                self.items[the_item.id] = the_item
+            else:
+                print(f'Item {item_data["archetype_id"]} {item_data["rarity"]}* {item_data["name"]} not found in item archetypes')
+
+        print(f'Found {len(self.items)} items')
+
         for mission_id in sorted(missing_missions):
             print(f'Need episode for mission id {mission_id} added to EPISODE_FOR_MISSION_ID dict')
 
@@ -708,7 +738,7 @@ class ItemsData:
 
 class GameEvent:
     def __init__(self, event_data_json, *, debug=False):
-        self.__raw_data = event_data_json
+        self._raw_data = event_data_json
         self.crew_bonuses = None
 
         print(f'Parsing event "{event_data_json["name"]}"... ')   #, end='')
@@ -868,7 +898,7 @@ class FactionEvent(GameEvent):
                 for crew_name, bonus in self.crew_bonuses.items():
                     print(f'Bonus crew: {crew_name}: {bonus}')
 
-        self.__raw_data_shuttles = raw_data_shuttles
+        self._raw_data_shuttles = raw_data_shuttles
         self.missions = [FactionShuttleMission(shuttle_data, debug=debug) for shuttle_data in raw_data_shuttles]
 
         print(f'Got {len(self.missions)} faction event shuttle missions')
@@ -905,7 +935,7 @@ class FactionEvent(GameEvent):
 
 class EventData:
 
-    def __init__(self, game_data_player, debug=False):
+    def __init__(self, game_data_player, *, debug=False):
         raw_data = game_data_player['character']['events']
         self.event = None
 
@@ -919,7 +949,7 @@ class EventData:
 
         if raw_data['content']['content_type'] == 'shuttles':
             self.event = FactionEvent(raw_data, game_data_player['character']['shuttle_adventures'], debug=debug)
-        elif raw_data['content']['content_type'] == 'supply':
+        elif raw_data['content']['content_type'] == 'gather':
             self.event = GalaxyEvent(raw_data, debug=debug)
         else:
             print(f"WARNING: Found unexpected event of expected type: {raw_data['content']['content_type']}")
@@ -947,7 +977,23 @@ class Adventure:
                 print(f'\t\tDemand: {count} of {event_item}')
                 recipe_string = event_item.get_recipe_string(tab_count=3)
                 if recipe_string is not None:
-                    print(event_item.get_recipe_string(tab_count=3))
+                    print(recipe_string)
+
+    def get_csv_text(self, *, debug=False):
+        '''
+        CSV format:
+        adv name, demand name, [comp id, comp star & name, qty owned, qty/demand, cost/item, mission,]
+        '''
+        s = ''
+        for item_id, count in self.demands.items():
+            event_item = ItemsData.get_item_by_archetype_id_static(item_id)
+            s += f'{self.name}, {event_item.name}, '
+            for demand_item_id, demand_item_name, qty_owned, qty_needed in event_item.get_recipe_data_for_csv():
+                s += f'{demand_item_id}, {demand_item_name}, {qty_owned}, {qty_needed}, , , '
+            s += '\n'
+        if debug:
+            print(s)
+        return s
 
     def get_wiki_text(self):
         '''
@@ -1056,12 +1102,12 @@ class GalaxyEvent(GameEvent):
     '''
 
     def __init__(self, event_data_json, *, debug=False):
-        super().__init__(event_data_json)
+        super().__init__(event_data_json, debug=debug)
         assert self.content_type == 'gather', self.content_type
-        self.gather_pools = [GatherPool(gp_data) for gp_data in self.__raw_data['content']['gather_pools']]
+        self.gather_pools = [GatherPool(gp_data, debug=debug) for gp_data in self._raw_data['content']['gather_pools']]
 
-        print(f'got {len(self.galaxy_event.gather_pools)} gather pools of '
-              f'{sum([len(gp.adventures) for gp in self.galaxy_event.gather_pools])} total adventures')
+        print(f'Got {len(self.gather_pools)} gather pools of '
+              f'{sum([len(gp.adventures) for gp in self.gather_pools])} total adventures')
 
     def get_wiki_text(self):
         s = ''
@@ -1070,6 +1116,28 @@ class GalaxyEvent(GameEvent):
                 if not adv.is_golden_octopus:
                     s += adv.get_wiki_text() + '\n\n'
         return s
+
+    def write_csv(self):
+        s = ''
+        for gp in self.gather_pools:
+            for adv in gp.adventures.values():
+                if not adv.is_golden_octopus:
+                    s += adv.get_csv_text() + '\n'
+
+        '''
+        CSV format:
+        adv name, demand name, [comp star & name, qty owned, qty/demand, cost/item, mission,]
+        '''
+        headers = 'Adventure, Demand, ' \
+                  'id1, Item 1, Owned, Qty per Demand, Cost per Item, Mission, ' \
+                  'id2, Item 2, Owned, Qty per Demand, Cost per Item, Mission, ' \
+                  'id3, Item 3, Owned, Qty per Demand, Cost per Item, Mission, ' \
+                  'id4, Item 4, Owned, Qty per Demand, Cost per Item, Mission\n'
+
+        filepath = Path.home().joinpath(SUBFOLDER_NAME, GALAXY_EVENT_FILENAME.format(self.name))
+        with open(filepath, 'w') as f:
+            f.write(headers)
+            f.write(s)
 
 
 class CrewMember:
@@ -1120,7 +1188,7 @@ class CrewData:
     __VOYAGE_ATTR = set(['id','name','cmd_voy','dip_voy','sec_voy','eng_voy','sci_voy','med_voy','traits'])
     __VOYAGE_DF_COLS = ['crew_id','name','cmd','dip','sec','eng','sci','med','traits']
 
-    def __init__(self, game_data_player):
+    def __init__(self, game_data_player, debug=False):
         self.crew = []
         print('Parsing {} crew members...'.format(len(game_data_player['character']['crew'])))
         for crew_member_data in game_data_player['character']['crew']:
@@ -1174,11 +1242,14 @@ class GameData:
         assert self.__ITEM_CACHE_KEY in game_data
         assert self.__ARCHETYPES_KEY in game_data[self.__ITEM_CACHE_KEY]
 
-        self.__raw_data = game_data
-        self.crew_data = CrewData(game_data[self.__PLAYER_KEY])
-        self.factions_data = FactionsData(game_data[self.__PLAYER_KEY])
-        self.items_data = ItemsData(game_data[self.__ITEM_CACHE_KEY][self.__ARCHETYPES_KEY])
-        self.event_data = EventData(game_data[self.__PLAYER_KEY], debug=debug)
+        player_data_json = game_data[self.__PLAYER_KEY]
+        items_data_json = game_data[self.__ITEM_CACHE_KEY][self.__ARCHETYPES_KEY]
+
+        self._raw_data = game_data
+        self.crew_data = CrewData(player_data_json, debug=debug)
+        self.factions_data = FactionsData(player_data_json, debug=debug)
+        self.items_data = ItemsData(items_data_json, player_data_json, debug=debug)
+        self.event_data = EventData(player_data_json, debug=debug)
 
 
 def authenticate(force_reauthentication=False):
@@ -1199,7 +1270,7 @@ def authenticate(force_reauthentication=False):
     return authtoken
 
 
-def load_game_data(max_days_old=7):
+def load_game_data(max_days_old=7, *, debug=False):
     data_age = get_game_data_age()
     if data_age >= max_days_old:
         print('Game data is {}; will download'.format(
@@ -1225,11 +1296,17 @@ def load_game_data(max_days_old=7):
         if game_data_json is not None:
             write_game_data_to_file(game_data_json)
 
-    return GameData(game_data_json, debug=False)
+    return GameData(game_data_json, debug=debug)
 
 
 if __name__ == "__main__":
-    data = load_game_data(max_days_old=17)
+    data = load_game_data(max_days_old=17, debug=False)
 
     if data.event_data.event is not None and type(data.event_data.event) in [FactionEvent, GalaxyEvent]:
-        print(data.event_data.event.get_wiki_text())
+#        print(data.event_data.event.get_wiki_text())
+        pass
+
+    if data.event_data.event is not None and type(data.event_data.event) is GalaxyEvent:
+        data.event_data.event.write_csv()
+    else:
+        print(data.event_data.event)
